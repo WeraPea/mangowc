@@ -138,6 +138,10 @@ void vertical_grid(Monitor *m) {
 
 	if (n == 1) {
 		wl_list_for_each(c, &clients, link) {
+
+			if (c->mon != m)
+				continue;
+
 			c->bw = m->visible_tiling_clients == 1 && no_border_when_single &&
 							smartgaps
 						? 0
@@ -162,6 +166,10 @@ void vertical_grid(Monitor *m) {
 		cw = (m->w.width - 2 * overviewgappo) * 0.65;
 		i = 0;
 		wl_list_for_each(c, &clients, link) {
+
+			if (c->mon != m)
+				continue;
+
 			c->bw = m->visible_tiling_clients == 1 && no_border_when_single &&
 							smartgaps
 						? 0
@@ -207,6 +215,9 @@ void vertical_grid(Monitor *m) {
 
 	i = 0;
 	wl_list_for_each(c, &clients, link) {
+		if (c->mon != m)
+			continue;
+
 		c->bw =
 			m->visible_tiling_clients == 1 && no_border_when_single && smartgaps
 				? 0
@@ -333,10 +344,11 @@ void vertical_scroller(Monitor *m) {
 	if (m->sel && !client_is_unmanaged(m->sel) && !m->sel->isfloating &&
 		!m->sel->ismaxmizescreen && !m->sel->isfullscreen) {
 		root_client = m->sel;
-	} else if (m->prevtilesel && !client_is_unmanaged(m->prevtilesel)) {
-		root_client = m->prevtilesel;
+	} else if (m->prevsel && ISTILED(m->prevsel) && VISIBLEON(m->prevsel, m) &&
+			   !client_is_unmanaged(m->prevsel)) {
+		root_client = m->prevsel;
 	} else {
-		root_client = center_select(m);
+		root_client = center_tiled_select(m);
 	}
 
 	if (!root_client) {
@@ -366,10 +378,11 @@ void vertical_scroller(Monitor *m) {
 
 	if (need_scroller) {
 		if (scroller_focus_center ||
-			((!m->prevtilesel ||
-			  (m->prevtilesel->scroller_proportion * max_client_height) +
-					  (root_client->scroller_proportion * max_client_height) >
-				  m->w.height - 2 * scroller_structs - cur_gappiv) &&
+			((!m->prevsel ||
+			  (ISTILED(m->prevsel) &&
+			   (m->prevsel->scroller_proportion * max_client_height) +
+					   (root_client->scroller_proportion * max_client_height) >
+				   m->w.height - 2 * scroller_structs - cur_gappiv)) &&
 			 scroller_prefer_center)) {
 			target_geom.y = m->w.y + (m->w.height - target_geom.height) / 2;
 		} else {
@@ -425,10 +438,10 @@ void vertical_tile(Monitor *m) {
 	cur_gappov = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappov;
 	cur_gappoh = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappoh;
 
-	if (n > selmon->pertag->nmasters[selmon->pertag->curtag])
-		mh = selmon->pertag->nmasters[selmon->pertag->curtag]
+	if (n > m->pertag->nmasters[m->pertag->curtag])
+		mh = m->pertag->nmasters[m->pertag->curtag]
 				 ? (m->w.height + cur_gappiv * ie) *
-					   selmon->pertag->mfacts[selmon->pertag->curtag]
+					   m->pertag->mfacts[m->pertag->curtag]
 				 : 0;
 	else
 		mh = m->w.height - 2 * cur_gappoh + cur_gappiv * ie;
@@ -437,8 +450,8 @@ void vertical_tile(Monitor *m) {
 	wl_list_for_each(c, &clients, link) {
 		if (!VISIBLEON(c, m) || !ISTILED(c))
 			continue;
-		if (i < selmon->pertag->nmasters[selmon->pertag->curtag]) {
-			r = MIN(n, selmon->pertag->nmasters[selmon->pertag->curtag]) - i;
+		if (i < m->pertag->nmasters[m->pertag->curtag]) {
+			r = MIN(n, m->pertag->nmasters[m->pertag->curtag]) - i;
 			w = (m->w.width - mx - cur_gappov - cur_gappiv * ie * (r - 1)) / r;
 			resize(c,
 				   (struct wlr_box){.x = m->w.x + mx,

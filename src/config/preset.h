@@ -61,6 +61,9 @@ int scroller_focus_center = 0;
 int scroller_prefer_center = 0;
 int focus_cross_monitor = 0;
 int focus_cross_tag = 0;
+int exchange_cross_monitor = 0;
+int scratchpad_cross_monitor = 0;
+int view_current_to_back = 1;
 int no_border_when_single = 0;
 int no_radius_when_single = 0;
 int snap_distance = 30;
@@ -95,6 +98,7 @@ float fullscreen_bg[] = {0.1, 0.1, 0.1, 1.0};
 int warpcursor = 1;			  /* Warp cursor to focused client */
 int xwayland_persistence = 1; /* xwayland persistence */
 int syncobj_enable = 0;
+int adaptive_sync = 0;
 
 /* keyboard */
 

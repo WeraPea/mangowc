@@ -132,6 +132,7 @@ typedef struct {
 	char *layout_name; // 布局名称
 	char *monitor_name;
 	int no_render_border;
+	int no_hide;
 } ConfigTagRule;
 
 typedef struct {
@@ -173,7 +174,10 @@ typedef struct {
 	int scroller_prefer_center;
 	int edge_scroller_pointer_focus;
 	int focus_cross_monitor;
+	int exchange_cross_monitor;
+	int scratchpad_cross_monitor;
 	int focus_cross_tag;
+	int view_current_to_back;
 	int no_border_when_single;
 	int no_radius_when_single;
 	int snap_distance;
@@ -301,6 +305,7 @@ typedef struct {
 	int single_scratchpad;
 	int xwayland_persistence;
 	int syncobj_enable;
+	int adaptive_sync;
 
 	struct xkb_rule_names xkb_rules;
 } Config;
@@ -724,15 +729,19 @@ FuncType parse_func_name(char *func_name, Arg *arg, char *arg_value,
 		func = switch_proportion_preset;
 	} else if (strcmp(func_name, "viewtoleft") == 0) {
 		func = viewtoleft;
+		(*arg).i = atoi(arg_value);
 	} else if (strcmp(func_name, "viewtoright") == 0) {
 		func = viewtoright;
+		(*arg).i = atoi(arg_value);
 	} else if (strcmp(func_name, "tagsilent") == 0) {
 		func = tagsilent;
 		(*arg).ui = 1 << (atoi(arg_value) - 1);
 	} else if (strcmp(func_name, "tagtoleft") == 0) {
 		func = tagtoleft;
+		(*arg).i = atoi(arg_value);
 	} else if (strcmp(func_name, "tagtoright") == 0) {
 		func = tagtoright;
+		(*arg).i = atoi(arg_value);
 	} else if (strcmp(func_name, "killclient") == 0) {
 		func = killclient;
 	} else if (strcmp(func_name, "centerwin") == 0) {
@@ -808,21 +817,28 @@ FuncType parse_func_name(char *func_name, Arg *arg, char *arg_value,
 		func = togglemaxmizescreen;
 	} else if (strcmp(func_name, "viewtoleft_have_client") == 0) {
 		func = viewtoleft_have_client;
+		(*arg).i = atoi(arg_value);
 	} else if (strcmp(func_name, "viewtoright_have_client") == 0) {
 		func = viewtoright_have_client;
+		(*arg).i = atoi(arg_value);
 	} else if (strcmp(func_name, "reload_config") == 0) {
 		func = reload_config;
 	} else if (strcmp(func_name, "tag") == 0) {
 		func = tag;
 		(*arg).ui = 1 << (atoi(arg_value) - 1);
+		(*arg).i = atoi(arg_value2);
 	} else if (strcmp(func_name, "view") == 0) {
 		func = bind_to_view;
 		(*arg).ui = 1 << (atoi(arg_value) - 1);
+		(*arg).i = atoi(arg_value2);
 	} else if (strcmp(func_name, "toggletag") == 0) {
 		func = toggletag;
 		(*arg).ui = 1 << (atoi(arg_value) - 1);
 	} else if (strcmp(func_name, "toggleview") == 0) {
 		func = toggleview;
+		(*arg).ui = 1 << (atoi(arg_value) - 1);
+	} else if (strcmp(func_name, "comboview") == 0) {
+		func = comboview;
 		(*arg).ui = 1 << (atoi(arg_value) - 1);
 	} else if (strcmp(func_name, "smartmovewin") == 0) {
 		func = smartmovewin;
@@ -967,10 +983,14 @@ void parse_config_line(Config *config, const char *line) {
 		config->edge_scroller_pointer_focus = atoi(value);
 	} else if (strcmp(key, "focus_cross_monitor") == 0) {
 		config->focus_cross_monitor = atoi(value);
+	} else if (strcmp(key, "exchange_cross_monitor") == 0) {
+		config->exchange_cross_monitor = atoi(value);
+	} else if (strcmp(key, "scratchpad_cross_monitor") == 0) {
+		config->scratchpad_cross_monitor = atoi(value);
 	} else if (strcmp(key, "focus_cross_tag") == 0) {
 		config->focus_cross_tag = atoi(value);
-	} else if (strcmp(key, "focus_cross_tag") == 0) {
-		config->focus_cross_tag = atoi(value);
+	} else if (strcmp(key, "view_current_to_back") == 0) {
+		config->view_current_to_back = atoi(value);
 	} else if (strcmp(key, "blur") == 0) {
 		config->blur = atoi(value);
 	} else if (strcmp(key, "blur_layer") == 0) {
@@ -1011,6 +1031,8 @@ void parse_config_line(Config *config, const char *line) {
 		config->xwayland_persistence = atoi(value);
 	} else if (strcmp(key, "syncobj_enable") == 0) {
 		config->syncobj_enable = atoi(value);
+	} else if (strcmp(key, "adaptive_sync") == 0) {
+		config->adaptive_sync = atoi(value);
 	} else if (strcmp(key, "no_border_when_single") == 0) {
 		config->no_border_when_single = atoi(value);
 	} else if (strcmp(key, "no_radius_when_single") == 0) {
@@ -1359,13 +1381,15 @@ void parse_config_line(Config *config, const char *line) {
 				trim_whitespace(val);
 
 				if (strcmp(key, "id") == 0) {
-					rule->id = CLAMP_INT(atoi(val), 1, LENGTH(tags));
+					rule->id = CLAMP_INT(atoi(val), 0, LENGTH(tags));
 				} else if (strcmp(key, "layout_name") == 0) {
 					rule->layout_name = strdup(val);
 				} else if (strcmp(key, "monitor_name") == 0) {
 					rule->monitor_name = strdup(val);
 				} else if (strcmp(key, "no_render_border") == 0) {
 					rule->no_render_border = CLAMP_INT(atoi(val), 0, 1);
+				} else if (strcmp(key, "no_hide") == 0) {
+					rule->no_hide = CLAMP_INT(atoi(val), 0, 1);
 				}
 			}
 			token = strtok(NULL, ",");
@@ -1695,9 +1719,9 @@ void parse_config_line(Config *config, const char *line) {
 		memset(binding, 0, sizeof(KeyBinding));
 
 		char mod_str[256], keysym_str[256], func_name[256],
-			arg_value[256] = "none", arg_value2[256] = "none",
-			arg_value3[256] = "none", arg_value4[256] = "none",
-			arg_value5[256] = "none";
+			arg_value[256] = "0\0", arg_value2[256] = "0\0",
+			arg_value3[256] = "0\0", arg_value4[256] = "0\0",
+			arg_value5[256] = "0\0";
 		if (sscanf(value, "%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^\n]",
 				   mod_str, keysym_str, func_name, arg_value, arg_value2,
 				   arg_value3, arg_value4, arg_value5) < 3) {
@@ -1754,9 +1778,9 @@ void parse_config_line(Config *config, const char *line) {
 		memset(binding, 0, sizeof(MouseBinding));
 
 		char mod_str[256], button_str[256], func_name[256],
-			arg_value[256] = "none", arg_value2[256] = "none",
-			arg_value3[256] = "none", arg_value4[256] = "none",
-			arg_value5[256] = "none";
+			arg_value[256] = "0\0", arg_value2[256] = "0\0",
+			arg_value3[256] = "0\0", arg_value4[256] = "0\0",
+			arg_value5[256] = "0\0";
 		if (sscanf(value, "%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^\n]",
 				   mod_str, button_str, func_name, arg_value, arg_value2,
 				   arg_value3, arg_value4, arg_value5) < 3) {
@@ -1813,9 +1837,9 @@ void parse_config_line(Config *config, const char *line) {
 		memset(binding, 0, sizeof(AxisBinding));
 
 		char mod_str[256], dir_str[256], func_name[256],
-			arg_value[256] = "none", arg_value2[256] = "none",
-			arg_value3[256] = "none", arg_value4[256] = "none",
-			arg_value5[256] = "none";
+			arg_value[256] = "0\0", arg_value2[256] = "0\0",
+			arg_value3[256] = "0\0", arg_value4[256] = "0\0",
+			arg_value5[256] = "0\0";
 		if (sscanf(value, "%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^\n]",
 				   mod_str, dir_str, func_name, arg_value, arg_value2,
 				   arg_value3, arg_value4, arg_value5) < 3) {
@@ -1875,9 +1899,9 @@ void parse_config_line(Config *config, const char *line) {
 		memset(binding, 0, sizeof(SwitchBinding));
 
 		char fold_str[256], func_name[256],
-			arg_value[256] = "none", arg_value2[256] = "none",
-			arg_value3[256] = "none", arg_value4[256] = "none",
-			arg_value5[256] = "none";
+			arg_value[256] = "0\0", arg_value2[256] = "0\0",
+			arg_value3[256] = "0\0", arg_value4[256] = "0\0",
+			arg_value5[256] = "0\0";
 		if (sscanf(value, "%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^\n]",
 				   fold_str, func_name, arg_value, arg_value2, arg_value3,
 				   arg_value4, arg_value5) < 3) {
@@ -1931,9 +1955,9 @@ void parse_config_line(Config *config, const char *line) {
 		memset(binding, 0, sizeof(GestureBinding));
 
 		char mod_str[256], motion_str[256], fingers_count_str[256],
-			func_name[256], arg_value[256] = "none", arg_value2[256] = "none",
-							arg_value3[256] = "none", arg_value4[256] = "none",
-							arg_value5[256] = "none";
+			func_name[256], arg_value[256] = "0\0", arg_value2[256] = "0\0",
+							arg_value3[256] = "0\0", arg_value4[256] = "0\0",
+							arg_value5[256] = "0\0";
 		if (sscanf(value,
 				   "%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^\n]",
 				   mod_str, motion_str, fingers_count_str, func_name, arg_value,
@@ -2338,6 +2362,7 @@ void override_config(void) {
 	// 杂项设置
 	xwayland_persistence = CLAMP_INT(config.xwayland_persistence, 0, 1);
 	syncobj_enable = CLAMP_INT(config.syncobj_enable, 0, 1);
+	adaptive_sync = CLAMP_INT(config.adaptive_sync, 0, 1);
 	axis_bind_apply_timeout =
 		CLAMP_INT(config.axis_bind_apply_timeout, 0, 1000);
 	focus_on_activate = CLAMP_INT(config.focus_on_activate, 0, 1);
@@ -2346,7 +2371,10 @@ void override_config(void) {
 	sloppyfocus = CLAMP_INT(config.sloppyfocus, 0, 1);
 	warpcursor = CLAMP_INT(config.warpcursor, 0, 1);
 	focus_cross_monitor = CLAMP_INT(config.focus_cross_monitor, 0, 1);
+	exchange_cross_monitor = CLAMP_INT(config.exchange_cross_monitor, 0, 1);
+	scratchpad_cross_monitor = CLAMP_INT(config.scratchpad_cross_monitor, 0, 1);
 	focus_cross_tag = CLAMP_INT(config.focus_cross_tag, 0, 1);
+	view_current_to_back = CLAMP_INT(config.view_current_to_back, 0, 1);
 	enable_floating_snap = CLAMP_INT(config.enable_floating_snap, 0, 1);
 	snap_distance = CLAMP_INT(config.snap_distance, 0, 99999);
 	cursor_size = CLAMP_INT(config.cursor_size, 4, 512);
@@ -2494,10 +2522,14 @@ void set_value_default() {
 	config.scroller_prefer_center = scroller_prefer_center;
 	config.edge_scroller_pointer_focus = edge_scroller_pointer_focus;
 	config.focus_cross_monitor = focus_cross_monitor;
+	config.exchange_cross_monitor = exchange_cross_monitor;
+	config.scratchpad_cross_monitor = scratchpad_cross_monitor;
 	config.focus_cross_tag = focus_cross_tag;
+	config.view_current_to_back = view_current_to_back;
 	config.single_scratchpad = single_scratchpad;
 	config.xwayland_persistence = xwayland_persistence;
 	config.syncobj_enable = syncobj_enable;
+	config.adaptive_sync = adaptive_sync;
 	config.no_border_when_single = no_border_when_single;
 	config.no_radius_when_single = no_radius_when_single;
 	config.snap_distance = snap_distance;
@@ -2734,11 +2766,11 @@ void reapply_monitor_rules(void) {
 				}
 
 				if (mr->width > 0 && mr->height > 0 && mr->refresh > 0) {
-					internal_mode = get_output_mode(m->wlr_output, mr->width,
-													mr->height, mr->refresh);
+					internal_mode = get_nearest_output_mode(
+						m->wlr_output, mr->width, mr->height, mr->refresh);
 					if (internal_mode) {
 						wlr_output_state_set_mode(&state, internal_mode);
-					} else {
+					} else if (wlr_output_is_headless(m->wlr_output)) {
 						wlr_output_state_set_custom_mode(
 							&state, mr->width, mr->height,
 							(int)roundf(mr->refresh * 1000));
@@ -2750,6 +2782,10 @@ void reapply_monitor_rules(void) {
 				wlr_output_layout_add(output_layout, m->wlr_output, mr->x,
 									  mr->y);
 			}
+		}
+
+		if (adaptive_sync) {
+			enable_adaptive_sync(m, &state);
 		}
 
 		wlr_output_commit_state(m->wlr_output, &state);
@@ -2836,6 +2872,8 @@ void reapply_tagrule(void) {
 							   config.tag_rules[i - 1].layout_name) == 0) {
 						m->pertag->ltidxs[config.tag_rules[i - 1].id] =
 							&layouts[jk];
+						m->pertag->no_hide[config.tag_rules[i - 1].id] =
+							config.tag_rules[i - 1].no_hide;
 					}
 				}
 			}

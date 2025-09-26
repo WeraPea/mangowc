@@ -2,7 +2,7 @@ void bind_to_view(const Arg *arg) {
 
 	unsigned int target = arg->ui;
 
-	if (selmon->pertag->curtag &&
+	if (view_current_to_back && selmon->pertag->curtag &&
 		(target & TAGMASK) == (selmon->tagset[selmon->seltags])) {
 		if (selmon->pertag->prevtag)
 			target = 1 << (selmon->pertag->prevtag - 1);
@@ -11,16 +11,16 @@ void bind_to_view(const Arg *arg) {
 	}
 
 	if ((int)target == INT_MIN && selmon->pertag->curtag == 0) {
-		if (selmon->pertag->prevtag)
+		if (view_current_to_back && selmon->pertag->prevtag)
 			target = 1 << (selmon->pertag->prevtag - 1);
 		else
 			target = 0;
 	}
 
 	if (target == 0 || (int)target == INT_MIN) {
-		view(&(Arg){.ui = ~0 & TAGMASK}, false);
+		view(&(Arg){.ui = ~0 & TAGMASK, .i = arg->i}, false);
 	} else {
-		view(&(Arg){.ui = target}, true);
+		view(&(Arg){.ui = target, .i = arg->i}, true);
 	}
 }
 
@@ -86,6 +86,8 @@ void focusdir(const Arg *arg) {
 				viewtoleft_have_client(NULL);
 			if (arg->i == RIGHT || arg->i == DOWN)
 				viewtoright_have_client(NULL);
+		} else if (config.focus_cross_monitor) {
+			focusmon(arg);
 		}
 	}
 }
@@ -129,7 +131,7 @@ void toggle_trackpad_enable(const Arg *arg) {
 }
 
 void focusmon(const Arg *arg) {
-	Client *c;
+	Client *c, *old_selmon_sel;
 	Monitor *m = NULL;
 
 	if (arg->i != UNDIR) {
@@ -150,6 +152,7 @@ void focusmon(const Arg *arg) {
 	if (!m || !m->wlr_output->enabled)
 		return;
 
+	old_selmon_sel = selmon->sel;
 	selmon = m;
 	warp_cursor_to_selmon(selmon);
 	c = focustop(selmon);
@@ -159,6 +162,10 @@ void focusmon(const Arg *arg) {
 		wlr_seat_keyboard_notify_clear_focus(seat);
 	} else
 		focusclient(c, 1);
+
+	if (old_selmon_sel) {
+		setborder_color(old_selmon_sel);
+	}
 }
 
 void // 17
@@ -392,6 +399,10 @@ void resizewin(const Arg *arg) {
 
 void restore_minimized(const Arg *arg) {
 	Client *c;
+
+	if (selmon && selmon->isoverview)
+		return;
+
 	if (selmon && selmon->sel && selmon->sel->is_in_scratchpad &&
 		selmon->sel->is_scratchpad_show) {
 		selmon->sel->isminied = 0;
@@ -410,6 +421,8 @@ void restore_minimized(const Arg *arg) {
 			c->isnamedscratchpad = 0;
 			setborder_color(c);
 			arrange(c->mon, false);
+			focusclient(c, 0);
+			warp_cursor(c);
 			return;
 		}
 	}
@@ -418,6 +431,7 @@ void restore_minimized(const Arg *arg) {
 void // 17
 setlayout(const Arg *arg) {
 	int jk;
+
 	for (jk = 0; jk < LENGTH(layouts); jk++) {
 		if (strcmp(layouts[jk].name, arg->v) == 0) {
 			selmon->pertag->ltidxs[selmon->pertag->curtag] = &layouts[jk];
@@ -846,6 +860,7 @@ void switch_layout(const Arg *arg) {
 			len = MAX(strlen(layouts[ji].name), strlen(target_layout_name));
 			if (strncmp(layouts[ji].name, target_layout_name, len) == 0) {
 				selmon->pertag->ltidxs[selmon->pertag->curtag] = &layouts[ji];
+
 				break;
 			}
 		}
@@ -990,7 +1005,7 @@ void tagtoleft(const Arg *arg) {
 	if (selmon->sel != NULL &&
 		__builtin_popcount(selmon->tagset[selmon->seltags] & TAGMASK) == 1 &&
 		selmon->tagset[selmon->seltags] > 1) {
-		tag(&(Arg){.ui = selmon->tagset[selmon->seltags] >> 1});
+		tag(&(Arg){.ui = selmon->tagset[selmon->seltags] >> 1, .i = arg->i});
 	}
 }
 
@@ -998,7 +1013,7 @@ void tagtoright(const Arg *arg) {
 	if (selmon->sel != NULL &&
 		__builtin_popcount(selmon->tagset[selmon->seltags] & TAGMASK) == 1 &&
 		selmon->tagset[selmon->seltags] & (TAGMASK >> 1)) {
-		tag(&(Arg){.ui = selmon->tagset[selmon->seltags] << 1});
+		tag(&(Arg){.ui = selmon->tagset[selmon->seltags] << 1, .i = arg->i});
 	}
 }
 
@@ -1027,8 +1042,12 @@ void toggle_scratchpad(const Arg *arg) {
 	Client *c;
 	bool hit = false;
 	Client *tmp = NULL;
+
+	if (selmon && selmon->isoverview)
+		return;
+
 	wl_list_for_each_safe(c, tmp, &clients, link) {
-		if (c->mon != selmon) {
+		if (!scratchpad_cross_monitor && c->mon != selmon) {
 			continue;
 		}
 
@@ -1054,6 +1073,9 @@ void togglefakefullscreen(const Arg *arg) {
 }
 void togglefloating(const Arg *arg) {
 	Client *sel = focustop(selmon);
+
+	if (selmon && selmon->isoverview)
+		return;
 
 	if (!sel)
 		return;
@@ -1192,7 +1214,7 @@ void viewtoleft(const Arg *arg) {
 	if (!selmon || (target) == selmon->tagset[selmon->seltags])
 		return;
 
-	view(&(Arg){.ui = target & TAGMASK}, true);
+	view(&(Arg){.ui = target & TAGMASK, .i = arg->i}, true);
 }
 void viewtoright(const Arg *arg) {
 	if (selmon->isoverview || selmon->pertag->curtag == 0) {
@@ -1207,7 +1229,7 @@ void viewtoright(const Arg *arg) {
 		return;
 	}
 
-	view(&(Arg){.ui = target & TAGMASK}, true);
+	view(&(Arg){.ui = target & TAGMASK, .i = arg->i}, true);
 }
 
 void viewtoleft_have_client(const Arg *arg) {
@@ -1231,7 +1253,7 @@ void viewtoleft_have_client(const Arg *arg) {
 	}
 
 	if (found)
-		view(&(Arg){.ui = (1 << (n - 1)) & TAGMASK}, true);
+		view(&(Arg){.ui = (1 << (n - 1)) & TAGMASK, .i = arg->i}, true);
 }
 
 void viewtoright_have_client(const Arg *arg) {
@@ -1255,7 +1277,25 @@ void viewtoright_have_client(const Arg *arg) {
 	}
 
 	if (found)
-		view(&(Arg){.ui = (1 << (n - 1)) & TAGMASK}, true);
+		view(&(Arg){.ui = (1 << (n - 1)) & TAGMASK, .i = arg->i}, true);
+}
+
+void comboview(const Arg *arg) {
+	unsigned int newtags = arg->ui & TAGMASK;
+	unsigned int target_tag = selmon->tagset[selmon->seltags];
+
+	if (!newtags || !selmon)
+		return;
+
+	if (tag_combo)
+		target_tag |= newtags;
+	else {
+		tag_combo = true;
+		target_tag = newtags;
+	}
+
+	view(&(Arg){.ui = target_tag}, false);
+	printstatus();
 }
 
 void zoom(const Arg *arg) {

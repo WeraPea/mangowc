@@ -30,13 +30,6 @@ enum corner_location set_client_corner_location(Client *c) {
 
 bool is_horizontal_stack_layout(Monitor *m) {
 
-	if (!m->pertag->curtag &&
-		(strcmp(m->pertag->ltidxs[m->pertag->prevtag]->name, "tile") == 0 ||
-		 strcmp(m->pertag->ltidxs[m->pertag->prevtag]->name, "spiral") == 0 ||
-		 strcmp(m->pertag->ltidxs[m->pertag->prevtag]->name, "dwindle") == 0 ||
-		 strcmp(m->pertag->ltidxs[m->pertag->prevtag]->name, "deck") == 0))
-		return true;
-
 	if (m->pertag->curtag &&
 		(strcmp(m->pertag->ltidxs[m->pertag->curtag]->name, "tile") == 0 ||
 		 strcmp(m->pertag->ltidxs[m->pertag->curtag]->name, "spiral") == 0 ||
@@ -899,6 +892,11 @@ void client_set_pending_state(Client *c) {
 		c->animation.duration = 0;
 	}
 
+	if (c->istagswitching) {
+		c->animation.duration = 0;
+		c->istagswitching = 0;
+	}
+
 	// 开始动画
 	client_commit(c);
 	c->dirty = true;
@@ -1011,6 +1009,10 @@ void resize(Client *c, struct wlr_box geo, int interact) {
 
 	if ((c->isglobal || c->isunglobal) && c->isfloating &&
 		c->animation.action == TAG) {
+		c->animainit_geom = c->geom;
+	}
+
+	if (c->scratchpad_switching_mon) {
 		c->animainit_geom = c->geom;
 	}
 

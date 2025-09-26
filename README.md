@@ -18,14 +18,14 @@ This project's development is based on [dwl](https://codeberg.org/dwl/dwl/).
      - Excellent input method support (text input v2/v3)
      - Flexible window layouts with easy switching (scroller, master, monocle, spiral, etc.)
      - Rich window states (swallow, minimize, maximize, unglobal, global, fakefullscreen, overlay, etc.)
-     - Simple yet powerful external configuration
+     - Simple yet powerful external configuration(support shortcuts hot-reload)
      - Sway-like scratchpad and named scratchpad
      - Ipc support(get/send message from/to compositor by external program)
      - Hycov-like overview
      - Window effects from scenefx (blur, shadow, corner radius, opacity)
 
 3. **Some disadvantages**
-   - Since it uses the fully automatic layout like dwm style, it does not allow you to manually adjust the window size when the window is in tiled state. It only allows you to change the layout parameters to adjust the window ratio.
+   - Since it uses the fully automatic layout like dwm style, it does not allow you to manually adjust the window size when the window is in tiled state. It only allows you to use dispatch like `setmfact` or `increase_proportion` bind to adjust the tiled window ratio.
 
 
 Master-Stack Layout
@@ -107,13 +107,10 @@ Finally, install the package:
 emerge --ask --verbose gui-wm/mangowc
 ```
 
-Patching wlroots is done by getting the patch with git from [the repository](https://github.com/DreamMaoMao/wlroots.git)
-and then copying it to `/etc/portage/patches/gui-libs/wlroots/`.
-
 ## Other
 
 ```bash
-git clone -b 0.19.0 https://gitlab.freedesktop.org/wlroots/wlroots.git
+git clone -b 0.19.1 https://gitlab.freedesktop.org/wlroots/wlroots.git
 cd wlroots
 meson build -Dprefix=/usr
 sudo ninja -C build install
@@ -245,13 +242,11 @@ Here's an example of using the modules in a flake:
 
 To package mango for other distributions, you can check the reference setup for:
 
-- [nix](https://github.com/DreamMaoMao/mango/blob/main/nix/default.nix)
-- [arch](https://aur.archlinux.org/cgit/aur.git/tree/PKGBUILD?h=mango-git).
+- [nix](https://github.com/DreamMaoMao/mangowc/blob/main/nix/default.nix)
+- [arch](https://aur.archlinux.org/cgit/aur.git/tree/PKGBUILD?h=mangowc-git).
 - [gentoo](https://data.gpo.zugaina.org/guru/gui-wm/mangowc)
 
-Currently building mango requires a patched version of `wlroots-0.19`. If possible, the patch can be extracted from the [latest commit](https://github.com/DreamMaoMao/wlroots.git)
-and applied on `prepare` step. If it is not possible, you will need to create a separate `wlroots` package and make it a build dependency.
-You might also need to package `scenefx` for your distribution, check availability [here](https://github.com/wlrfx/scenefx.git).
+You might need to package `scenefx` for your distribution, check availability [here](https://github.com/wlrfx/scenefx.git).
 
 If you encounter build errors when packaging `mango`, feel free to create an issue and ask a question, but
 Read The Friendly Manual on packaging software in your distribution first.

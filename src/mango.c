@@ -314,6 +314,7 @@ struct Client {
 	int isopensilent;
 	int istagsilent;
 	int iskilling;
+	int istagswitching;
 	int isnamedscratchpad;
 	bool is_pending_open_animation;
 	bool is_restoring_from_ov;
@@ -325,6 +326,7 @@ struct Client {
 	Client *swallowing, *swallowedby;
 	bool is_clip_to_hide;
 	bool drag_to_tile;
+	bool scratchpad_switching_mon;
 	bool fake_no_border;
 	int nofadein;
 	int nofadeout;
@@ -436,7 +438,7 @@ struct Monitor {
 	int gappoh; /* horizontal outer gaps */
 	int gappov; /* vertical outer gaps */
 	Pertag *pertag;
-	Client *sel, *prevtilesel;
+	Client *sel, *prevsel;
 	int isoverview;
 	int is_in_hotarea;
 	int gamma_lut_changed;
@@ -644,9 +646,9 @@ static struct wlr_box setclient_coordinate_center(Client *c,
 												  int offsetx, int offsety);
 static unsigned int get_tags_first_tag(unsigned int tags);
 
-static struct wlr_output_mode *get_output_mode(struct wlr_output *output,
-											   int width, int height,
-											   float refresh);
+static struct wlr_output_mode *
+get_nearest_output_mode(struct wlr_output *output, int width, int height,
+						float refresh);
 
 static void client_commit(Client *c);
 static void layer_commit(LayerSurface *l);
@@ -657,7 +659,8 @@ static void scene_buffer_apply_opacity(struct wlr_scene_buffer *buffer, int sx,
 									   int sy, void *data);
 
 static Client *direction_select(const Arg *arg);
-static void view_in_mon(const Arg *arg, bool want_animation, Monitor *m);
+static void view_in_mon(const Arg *arg, bool want_animation, Monitor *m,
+						bool changefocus);
 
 static void buffer_set_effect(Client *c, BufferData buffer_data);
 static void snap_scene_buffer_apply_effect(struct wlr_scene_buffer *buffer,
@@ -665,7 +668,7 @@ static void snap_scene_buffer_apply_effect(struct wlr_scene_buffer *buffer,
 static void client_set_pending_state(Client *c);
 static void layer_set_pending_state(LayerSurface *l);
 static void set_rect_size(struct wlr_scene_rect *rect, int width, int height);
-static Client *center_select(Monitor *m);
+static Client *center_tiled_select(Monitor *m);
 static void handlecursoractivity(void);
 static int hidecursor(void *data);
 static bool check_hit_no_border(Client *c);
@@ -691,13 +694,15 @@ static struct wlr_scene_tree *
 wlr_scene_tree_snapshot(struct wlr_scene_node *node,
 						struct wlr_scene_tree *parent);
 static bool is_scroller_layout(Monitor *m);
-void create_output(struct wlr_backend *backend, void *data);
+static void create_output(struct wlr_backend *backend, void *data);
 static const char *get_layout_abbr(const char *full_name);
-void apply_named_scratchpad(Client *target_client);
-Client *get_client_by_id_or_title(const char *arg_id, const char *arg_title);
-bool switch_scratchpad_client_state(Client *c);
-bool check_trackpad_disabled(struct wlr_pointer *pointer);
-unsigned int get_tag_status(unsigned int tag, Monitor *m);
+static void apply_named_scratchpad(Client *target_client);
+static Client *get_client_by_id_or_title(const char *arg_id,
+										 const char *arg_title);
+static bool switch_scratchpad_client_state(Client *c);
+static bool check_trackpad_disabled(struct wlr_pointer *pointer);
+static unsigned int get_tag_status(unsigned int tag, Monitor *m);
+static void enable_adaptive_sync(Monitor *m, struct wlr_output_state *state);
 
 #include "data/static_keymap.h"
 #include "dispatch/bind_declare.h"
@@ -782,6 +787,8 @@ struct dvec2 *baked_points_close;
 
 static struct wl_event_source *hide_source;
 static bool cursor_hidden = false;
+static bool tag_combo = false;
+
 static struct {
 	enum wp_cursor_shape_device_v1_shape shape;
 	struct wlr_surface *surface;
@@ -797,6 +804,7 @@ struct Pertag {
 	int nmasters[LENGTH(tags) + 1];	 /* number of windows in master area */
 	float mfacts[LENGTH(tags) + 1];	 /* mfacts per tag */
 	float smfacts[LENGTH(tags) + 1]; /* smfacts per tag */
+	bool no_hide[LENGTH(tags) + 1];	 /* no_hide per tag */
 	const Layout
 		*ltidxs[LENGTH(tags) + 1]; /* matrix of tags and layouts indexes  */
 };
@@ -849,6 +857,7 @@ static struct wlr_xwayland *xwayland;
 #include "animation/client.h"
 #include "animation/common.h"
 #include "animation/layer.h"
+#include "animation/tag.h"
 #include "config/parse_config.h"
 #include "dispatch/bind_define.h"
 #include "ext-protocol/all.h"
@@ -891,6 +900,10 @@ void clear_fullscreen_flag(Client *c) {
 }
 
 void minimized(const Arg *arg) {
+
+	if (selmon && selmon->isoverview)
+		return;
+
 	if (selmon->sel && !selmon->sel->isminied) {
 		set_minimized(selmon->sel);
 	}
@@ -920,7 +933,7 @@ void show_scratchpad(Client *c) {
 		resize(c, c->geom, 0);
 	}
 
-	c->oldtags = selmon->tagset[selmon->seltags];
+	c->oldtags = c->mon->tagset[c->mon->seltags];
 	wl_list_remove(&c->link);					  // 从原来位置移除
 	wl_list_insert(clients.prev->next, &c->link); // 插入开头
 	show_hide_client(c);
@@ -969,6 +982,38 @@ void swallow(Client *c, Client *w) {
 }
 
 bool switch_scratchpad_client_state(Client *c) {
+
+	if (scratchpad_cross_monitor && selmon && c->mon != selmon &&
+		c->is_in_scratchpad) {
+		// 保存原始monitor用于尺寸计算
+		Monitor *oldmon = c->mon;
+		c->scratchpad_switching_mon = true;
+		c->mon = selmon;
+		reset_foreign_tolevel(c);
+		client_update_oldmonname_record(c, selmon);
+
+		// 根据新monitor调整窗口尺寸
+		c->float_geom.width =
+			(int)(c->float_geom.width * c->mon->w.width / oldmon->w.width);
+		c->float_geom.height =
+			(int)(c->float_geom.height * c->mon->w.height / oldmon->w.height);
+
+		c->float_geom = setclient_coordinate_center(c, c->float_geom, 0, 0);
+
+		// 只有显示状态的scratchpad才需要聚焦和返回true
+		if (c->is_scratchpad_show) {
+			c->tags = get_tags_first_tag(selmon->tagset[selmon->seltags]);
+			resize(c, c->float_geom, 0);
+			arrange(selmon, false);
+			focusclient(c, true);
+			c->scratchpad_switching_mon = false;
+			return true;
+		} else {
+			resize(c, c->float_geom, 0);
+			c->scratchpad_switching_mon = false;
+		}
+	}
+
 	if (c->is_in_scratchpad && c->is_scratchpad_show &&
 		(selmon->tagset[selmon->seltags] & c->tags) == 0) {
 		unsigned int target =
@@ -990,9 +1035,11 @@ bool switch_scratchpad_client_state(Client *c) {
 void apply_named_scratchpad(Client *target_client) {
 	Client *c = NULL;
 	wl_list_for_each(c, &clients, link) {
-		if (c->mon != selmon) {
+
+		if (!scratchpad_cross_monitor && c->mon != selmon) {
 			continue;
 		}
+
 		if (single_scratchpad && c->is_in_scratchpad && c->is_scratchpad_show &&
 			c != target_client) {
 			set_minimized(c);
@@ -1237,7 +1284,7 @@ void applyrules(Client *c) {
 		!(c->mon == selmon && c->tags & c->mon->tagset[c->mon->seltags]) &&
 		!c->isopensilent && !c->istagsilent) {
 		c->animation.tag_from_rule = true;
-		view_in_mon(&(Arg){.ui = c->tags}, true, c->mon);
+		view_in_mon(&(Arg){.ui = c->tags}, true, c->mon, true);
 	}
 
 	setfullscreen(c, fullscreen_state_backup);
@@ -1248,7 +1295,8 @@ void applyrules(Client *c) {
 	*/
 	wl_list_for_each(fc, &clients,
 					 link) if (fc && fc != c && c->tags & fc->tags &&
-							   ISFULLSCREEN(fc) && !c->isfloating) {
+							   VISIBLEON(fc, c->mon) && ISFULLSCREEN(fc) &&
+							   !c->isfloating) {
 		clear_fullscreen_flag(fc);
 		arrange(c->mon, false);
 	}
@@ -1262,92 +1310,6 @@ void applyrules(Client *c) {
 	if (c->isoverlay) {
 		wlr_scene_node_reparent(&selmon->sel->scene->node, layers[LyrOverlay]);
 		wlr_scene_node_raise_to_top(&selmon->sel->scene->node);
-	}
-}
-
-void set_tagin_animation(Monitor *m, Client *c) {
-	if (c->animation.running) {
-		c->animainit_geom.x = c->animation.current.x;
-		c->animainit_geom.y = c->animation.current.y;
-		return;
-	}
-
-	if (m->pertag->curtag > m->pertag->prevtag) {
-
-		c->animainit_geom.x = tag_animation_direction == VERTICAL
-								  ? c->animation.current.x
-								  : c->mon->m.x + c->mon->m.width;
-		c->animainit_geom.y = tag_animation_direction == VERTICAL
-								  ? c->mon->m.y + c->mon->m.height
-								  : c->animation.current.y;
-
-	} else {
-
-		c->animainit_geom.x = tag_animation_direction == VERTICAL
-								  ? c->animation.current.x
-								  : m->m.x - c->geom.width;
-		c->animainit_geom.y = tag_animation_direction == VERTICAL
-								  ? m->m.y - c->geom.height
-								  : c->animation.current.y;
-	}
-}
-
-void set_arrange_visible(Monitor *m, Client *c, bool want_animation) {
-
-	if (!c->is_clip_to_hide || !ISTILED(c) || !is_scroller_layout(c->mon)) {
-		c->is_clip_to_hide = false;
-		wlr_scene_node_set_enabled(&c->scene->node, true);
-		wlr_scene_node_set_enabled(&c->scene_surface->node, true);
-	}
-	client_set_suspended(c, false);
-
-	if (!c->animation.tag_from_rule && want_animation &&
-		m->pertag->prevtag != 0 && m->pertag->curtag != 0 && animations) {
-		c->animation.tagining = true;
-		set_tagin_animation(m, c);
-	} else {
-		c->animainit_geom.x = c->animation.current.x;
-		c->animainit_geom.y = c->animation.current.y;
-	}
-
-	c->animation.tag_from_rule = false;
-	c->animation.tagouting = false;
-	c->animation.tagouted = false;
-	resize(c, c->geom, 0);
-}
-
-void set_tagout_animation(Monitor *m, Client *c) {
-	if (m->pertag->curtag > m->pertag->prevtag) {
-		c->pending = c->geom;
-		c->pending.x = tag_animation_direction == VERTICAL
-						   ? c->animation.current.x
-						   : c->mon->m.x - c->geom.width;
-		c->pending.y = tag_animation_direction == VERTICAL
-						   ? c->mon->m.y - c->geom.height
-						   : c->animation.current.y;
-
-		resize(c, c->geom, 0);
-	} else {
-		c->pending = c->geom;
-		c->pending.x = tag_animation_direction == VERTICAL
-						   ? c->animation.current.x
-						   : c->mon->m.x + c->mon->m.width;
-		c->pending.y = tag_animation_direction == VERTICAL
-						   ? c->mon->m.y + c->mon->m.height
-						   : c->animation.current.y;
-		resize(c, c->geom, 0);
-	}
-}
-
-void set_arrange_hidden(Monitor *m, Client *c, bool want_animation) {
-	if ((c->tags & (1 << (m->pertag->prevtag - 1))) &&
-		m->pertag->prevtag != 0 && m->pertag->curtag != 0 && animations) {
-		c->animation.tagouting = true;
-		c->animation.tagining = false;
-		set_tagout_animation(m, c);
-	} else {
-		wlr_scene_node_set_enabled(&c->scene->node, false);
-		client_set_suspended(c, true);
 	}
 }
 
@@ -1369,7 +1331,7 @@ arrange(Monitor *m, bool want_animation) {
 
 		if (c->mon == m && (c->isglobal || c->isunglobal)) {
 			c->tags = m->tagset[m->seltags];
-			if (selmon->sel == NULL)
+			if (c->mon->sel == NULL)
 				focusclient(c, 0);
 		}
 
@@ -1394,12 +1356,8 @@ arrange(Monitor *m, bool want_animation) {
 
 	if (m->isoverview) {
 		overviewlayout.arrange(m);
-	} else if (m && m->pertag->curtag &&
-			   m->pertag->ltidxs[m->pertag->curtag]->arrange) {
+	} else {
 		m->pertag->ltidxs[m->pertag->curtag]->arrange(m);
-	} else if (m && m->pertag->prevtag &&
-			   m->pertag->ltidxs[m->pertag->prevtag]->arrange) {
-		m->pertag->ltidxs[m->pertag->prevtag]->arrange(m);
 	}
 
 	motionnotify(0, NULL, 0, 0, 0, 0);
@@ -1902,7 +1860,7 @@ buttonpress(struct wl_listener *listener, void *data) {
 			client_update_oldmonname_record(grabc, selmon);
 			setmon(grabc, selmon, 0, true);
 			reset_foreign_tolevel(grabc);
-			selmon->prevtilesel = ISTILED(selmon->sel) ? selmon->sel : NULL;
+			selmon->prevsel = ISTILED(selmon->sel) ? selmon->sel : NULL;
 			selmon->sel = grabc;
 			tmpc = grabc;
 			grabc = NULL;
@@ -2510,17 +2468,37 @@ void createlocksurface(struct wl_listener *listener, void *data) {
 		client_notify_enter(lock_surface->surface, wlr_seat_get_keyboard(seat));
 }
 
-struct wlr_output_mode *get_output_mode(struct wlr_output *output, int width,
-										int height, float refresh) {
-	struct wlr_output_mode *mode;
+struct wlr_output_mode *get_nearest_output_mode(struct wlr_output *output,
+												int width, int height,
+												float refresh) {
+	struct wlr_output_mode *mode, *nearest_mode = NULL;
+	float min_diff = 99999.0f;
+
 	wl_list_for_each(mode, &output->modes, link) {
-		if (mode->width == width && mode->height == height &&
-			(int)round(mode->refresh / 1000) == (int)round(refresh)) {
-			return mode;
+		if (mode->width == width && mode->height == height) {
+			float mode_refresh = mode->refresh / 1000.0f;
+			float diff = fabsf(mode_refresh - refresh);
+
+			if (diff < min_diff) {
+				min_diff = diff;
+				nearest_mode = mode;
+			}
 		}
 	}
 
-	return NULL;
+	return nearest_mode;
+}
+
+void enable_adaptive_sync(Monitor *m, struct wlr_output_state *state) {
+	wlr_output_state_set_adaptive_sync_enabled(state, true);
+	if (!wlr_output_test_state(m->wlr_output, state)) {
+		wlr_output_state_set_adaptive_sync_enabled(state, false);
+		wlr_log(WLR_DEBUG, "failed to enable adaptive sync for output %s",
+				m->wlr_output->name);
+	} else {
+		wlr_log(WLR_INFO, "adaptive sync enabled for output %s",
+				m->wlr_output->name);
+	}
 }
 
 void createmon(struct wl_listener *listener, void *data) {
@@ -2585,12 +2563,13 @@ void createmon(struct wl_listener *listener, void *data) {
 			rr = r->rr;
 
 			if (r->width > 0 && r->height > 0 && r->refresh > 0) {
-				custom_monitor_mode = true;
-				internal_mode = get_output_mode(m->wlr_output, r->width,
-												r->height, r->refresh);
+				internal_mode = get_nearest_output_mode(m->wlr_output, r->width,
+														r->height, r->refresh);
 				if (internal_mode) {
+					custom_monitor_mode = true;
 					wlr_output_state_set_mode(&state, internal_mode);
-				} else {
+				} else if (wlr_output_is_headless(m->wlr_output)) {
+					custom_monitor_mode = true;
 					wlr_output_state_set_custom_mode(
 						&state, r->width, r->height,
 						(int)roundf(r->refresh * 1000));
@@ -2609,6 +2588,10 @@ void createmon(struct wl_listener *listener, void *data) {
 	if (!custom_monitor_mode)
 		wlr_output_state_set_mode(&state,
 								  wlr_output_preferred_mode(wlr_output));
+
+	if (adaptive_sync) {
+		enable_adaptive_sync(m, &state);
+	}
 
 	/* Set up event listeners */
 	LISTEN(&wlr_output->events.frame, &m->frame, rendermon);
@@ -2639,6 +2622,8 @@ void createmon(struct wl_listener *listener, void *data) {
 				strcmp(layouts[jk].name, config.tag_rules[i - 1].layout_name) ==
 					0) {
 				m->pertag->ltidxs[config.tag_rules[i - 1].id] = &layouts[jk];
+				m->pertag->no_hide[config.tag_rules[i - 1].id] =
+					config.tag_rules[i - 1].no_hide;
 			}
 		}
 	}
@@ -2783,22 +2768,24 @@ void configure_pointer(struct libinput_device *device) {
 }
 
 void createpointer(struct wlr_pointer *pointer) {
-	struct libinput_device *device =
-		wlr_libinput_get_device_handle(&pointer->base);
 
-	if (device && wlr_input_device_is_libinput(&pointer->base)) {
+	struct libinput_device *device = NULL;
+
+	if (wlr_input_device_is_libinput(&pointer->base) &&
+		(device = wlr_libinput_get_device_handle(&pointer->base))) {
+
 		configure_pointer(device);
+
+		InputDevice *input_dev = calloc(1, sizeof(InputDevice));
+		input_dev->wlr_device = &pointer->base;
+		input_dev->libinput_device = device;
+
+		input_dev->destroy_listener.notify = destroyinputdevice;
+		wl_signal_add(&pointer->base.events.destroy,
+					  &input_dev->destroy_listener);
+
+		wl_list_insert(&inputdevices, &input_dev->link);
 	}
-
-	InputDevice *input_dev = calloc(1, sizeof(InputDevice));
-	input_dev->wlr_device = &pointer->base;
-	input_dev->libinput_device = device;
-
-	input_dev->destroy_listener.notify = destroyinputdevice;
-	wl_signal_add(&pointer->base.events.destroy, &input_dev->destroy_listener);
-
-	wl_list_insert(&inputdevices, &input_dev->link);
-
 	wlr_cursor_attach_input_device(cursor, &pointer->base);
 }
 
@@ -2823,32 +2810,36 @@ void switch_toggle(struct wl_listener *listener, void *data) {
 }
 
 void createswitch(struct wlr_switch *switch_device) {
-	struct libinput_device *device =
-		wlr_libinput_get_device_handle(&switch_device->base);
 
-	InputDevice *input_dev = calloc(1, sizeof(InputDevice));
-	input_dev->wlr_device = &switch_device->base;
-	input_dev->libinput_device = device;
-	input_dev->device_data = NULL; // 初始化为 NULL
+	struct libinput_device *device = NULL;
 
-	input_dev->destroy_listener.notify = destroyinputdevice;
-	wl_signal_add(&switch_device->base.events.destroy,
-				  &input_dev->destroy_listener);
+	if (wlr_input_device_is_libinput(&switch_device->base) &&
+		(device = wlr_libinput_get_device_handle(&switch_device->base))) {
 
-	// 创建 Switch 特定数据
-	Switch *sw = calloc(1, sizeof(Switch));
-	sw->wlr_switch = switch_device;
-	sw->toggle.notify = switch_toggle;
-	sw->input_dev = input_dev;
+		InputDevice *input_dev = calloc(1, sizeof(InputDevice));
+		input_dev->wlr_device = &switch_device->base;
+		input_dev->libinput_device = device;
+		input_dev->device_data = NULL; // 初始化为 NULL
 
-	// 将 Switch 指针保存到 input_device 中
-	input_dev->device_data = sw;
+		input_dev->destroy_listener.notify = destroyinputdevice;
+		wl_signal_add(&switch_device->base.events.destroy,
+					  &input_dev->destroy_listener);
 
-	// 添加 toggle 监听器
-	wl_signal_add(&switch_device->events.toggle, &sw->toggle);
+		// 创建 Switch 特定数据
+		Switch *sw = calloc(1, sizeof(Switch));
+		sw->wlr_switch = switch_device;
+		sw->toggle.notify = switch_toggle;
+		sw->input_dev = input_dev;
 
-	// 添加到全局列表
-	wl_list_insert(&inputdevices, &input_dev->link);
+		// 将 Switch 指针保存到 input_device 中
+		input_dev->device_data = sw;
+
+		// 添加 toggle 监听器
+		wl_signal_add(&switch_device->events.toggle, &sw->toggle);
+
+		// 添加到全局列表
+		wl_list_insert(&inputdevices, &input_dev->link);
+	}
 }
 
 void createpointerconstraint(struct wl_listener *listener, void *data) {
@@ -3066,12 +3057,15 @@ void focusclient(Client *c, int lift) {
 	if (c && !c->iskilling && !client_is_unmanaged(c) && c->mon) {
 
 		selmon = c->mon;
-		selmon->prevtilesel = ISTILED(selmon->sel) ? selmon->sel : NULL;
+		selmon->prevsel = selmon->sel;
 		selmon->sel = c;
 
 		// decide whether need to re-arrange
 
-		if (c && ISTILED(c) && VISIBLEON(c, selmon) && !INSIDEMON(c) &&
+		if (c && selmon->prevsel &&
+			(selmon->prevsel->tags & selmon->tagset[selmon->seltags]) &&
+			(c->tags & selmon->tagset[selmon->seltags]) && !c->isfloating &&
+			!c->isfullscreen && !c->ismaxmizescreen &&
 			is_scroller_layout(selmon)) {
 			arrange(selmon, false);
 		}
@@ -3343,6 +3337,8 @@ void keypress(struct wl_listener *listener, void *data) {
 	if (!locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
 		for (i = 0; i < nsyms; i++)
 			handled = keybinding(mods, syms[i], keycode) || handled;
+	} else if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED) {
+		tag_combo = false;
 	}
 
 	if (handled && group->wlr_group->keyboard.repeat_info.delay > 0) {
@@ -3445,7 +3441,7 @@ static void iter_xdg_scene_buffers(struct wlr_scene_buffer *buffer, int sx,
 
 	if (blur && c && !c->noblur) {
 		wlr_scene_buffer_set_backdrop_blur(buffer, true);
-		wlr_scene_buffer_set_backdrop_blur_ignore_transparent(buffer, true);
+		wlr_scene_buffer_set_backdrop_blur_ignore_transparent(buffer, false);
 		if (blur_optimized) {
 			wlr_scene_buffer_set_backdrop_blur_optimized(buffer, true);
 		} else {
@@ -3461,6 +3457,7 @@ void init_client_properties(Client *c) {
 	c->isfullscreen = 0;
 	c->need_float_size_reduce = 0;
 	c->iskilling = 0;
+	c->istagswitching = 0;
 	c->isglobal = 0;
 	c->isminied = 0;
 	c->isoverlay = 0;
@@ -3476,6 +3473,7 @@ void init_client_properties(Client *c) {
 	c->scroller_proportion = scroller_default_proportion;
 	c->is_pending_open_animation = true;
 	c->drag_to_tile = false;
+	c->scratchpad_switching_mon = false;
 	c->fake_no_border = false;
 	c->focused_opacity = focused_opacity;
 	c->unfocused_opacity = unfocused_opacity;
@@ -3568,13 +3566,17 @@ mapnotify(struct wl_listener *listener, void *data) {
 			VISIBLEON(selmon->sel, selmon)) {
 			at_client = selmon->sel;
 		} else {
-			at_client = center_select(selmon);
+			at_client = center_tiled_select(selmon);
 		}
 
-		at_client->link.next->prev = &c->link;
-		c->link.prev = &at_client->link;
-		c->link.next = at_client->link.next;
-		at_client->link.next = &c->link;
+		if (at_client) {
+			at_client->link.next->prev = &c->link;
+			c->link.prev = &at_client->link;
+			c->link.next = at_client->link.next;
+			at_client->link.next = &c->link;
+		} else {
+			wl_list_insert(clients.prev, &c->link); // 尾部入栈
+		}
 	} else
 		wl_list_insert(clients.prev, &c->link); // 尾部入栈
 	wl_list_insert(&fstack, &c->flink);
@@ -4112,7 +4114,12 @@ void setborder_color(Client *c) {
 }
 
 void exchange_two_client(Client *c1, Client *c2) {
-	if (c1 == NULL || c2 == NULL || c1->mon != c2->mon) {
+
+	Monitor *tmp_mon;
+	unsigned int tmp_tags;
+
+	if (c1 == NULL || c2 == NULL ||
+		(!exchange_cross_monitor && c1->mon != c2->mon)) {
 		return;
 	}
 
@@ -4153,8 +4160,18 @@ void exchange_two_client(Client *c1, Client *c2) {
 		tmp2_next->prev = &c1->link;
 	}
 
-	arrange(c1->mon, false);
-	focusclient(c1, 0);
+	if (exchange_cross_monitor) {
+		tmp_mon = c2->mon;
+		tmp_tags = c2->tags;
+		setmon(c2, c1->mon, c1->tags, false);
+		setmon(c1, tmp_mon, tmp_tags, false);
+		arrange(c1->mon, false);
+		arrange(c2->mon, false);
+		focusclient(c1, 0);
+	} else {
+		arrange(c1->mon, false);
+		focusclient(c1, 0);
+	}
 }
 
 void // 17
@@ -4310,9 +4327,9 @@ setfloating(Client *c, int floating) {
 		c->is_in_scratchpad = 0;
 		c->isnamedscratchpad = 0;
 		// 让当前tag中的全屏窗口退出全屏参与平铺
-		wl_list_for_each(fc, &clients, link) if (fc && fc != c &&
-												 c->tags & fc->tags &&
-												 ISFULLSCREEN(fc)) {
+		wl_list_for_each(fc, &clients,
+						 link) if (fc && fc != c && VISIBLEON(fc, c->mon) &&
+								   c->tags & fc->tags && ISFULLSCREEN(fc)) {
 			clear_fullscreen_flag(fc);
 		}
 	}
@@ -4533,8 +4550,8 @@ void setmon(Client *c, Monitor *m, unsigned int newtags, bool focus) {
 		oldmon->sel = NULL;
 	}
 
-	if (oldmon && oldmon->prevtilesel == c) {
-		oldmon->prevtilesel = NULL;
+	if (oldmon && oldmon->prevsel == c) {
+		oldmon->prevsel = NULL;
 	}
 
 	c->mon = m;
@@ -4554,7 +4571,12 @@ void setmon(Client *c, Monitor *m, unsigned int newtags, bool focus) {
 	if (m && focus)
 		focusclient(focustop(m), 1);
 
-	if (!c->foreign_toplevel && m) {
+	if (m) {
+
+		if (c->foreign_toplevel) {
+			remove_foreign_topleve(c);
+		}
+
 		add_foreign_toplevel(c);
 		if (m->sel && m->sel->foreign_toplevel)
 			wlr_foreign_toplevel_handle_v1_set_activated(
@@ -4586,6 +4608,7 @@ void setsel(struct wl_listener *listener, void *data) {
 }
 
 void show_hide_client(Client *c) {
+
 	unsigned int target = get_tags_first_tag(c->oldtags);
 	tag_client(&(Arg){.ui = target}, c);
 	// c->tags = c->oldtags;
@@ -4920,17 +4943,20 @@ void startdrag(struct wl_listener *listener, void *data) {
 void tag_client(const Arg *arg, Client *target_client) {
 	Client *fc;
 	if (target_client && arg->ui & TAGMASK) {
+
 		target_client->tags = arg->ui & TAGMASK;
+		target_client->istagswitching = 1;
+
 		wl_list_for_each(fc, &clients, link) {
 			if (fc && fc != target_client && target_client->tags & fc->tags &&
 				ISFULLSCREEN(fc) && !target_client->isfloating) {
 				clear_fullscreen_flag(fc);
 			}
 		}
-		view(&(Arg){.ui = arg->ui}, false);
+		view(&(Arg){.ui = arg->ui, .i = arg->i}, true);
 
 	} else {
-		view(arg, false);
+		view(arg, true);
 	}
 
 	focusclient(target_client, 1);
@@ -5074,15 +5100,15 @@ void toggleoverview(const Arg *arg) {
 	// overview到正常视图,还原之前退出的浮动和全屏窗口状态
 	if (selmon->isoverview) {
 		wl_list_for_each(c, &clients, link) {
-			if (c && !client_is_unmanaged(c) &&
+			if (c && c->mon == selmon && !client_is_unmanaged(c) &&
 				!client_should_ignore_focus(c) && !c->isunglobal)
 				overview_backup(c);
 		}
 	} else {
 		wl_list_for_each(c, &clients, link) {
-			if (c && !c->iskilling && !client_is_unmanaged(c) &&
-				!c->isunglobal && !client_should_ignore_focus(c) &&
-				client_surface(c)->mapped)
+			if (c && c->mon == selmon && !c->iskilling &&
+				!client_is_unmanaged(c) && !c->isunglobal &&
+				!client_should_ignore_focus(c) && client_surface(c)->mapped)
 				overview_restore(c, &(Arg){.ui = target});
 		}
 	}
@@ -5146,8 +5172,8 @@ void unmapnotify(struct wl_listener *listener, void *data) {
 		if (c == m->sel) {
 			m->sel = NULL;
 		}
-		if (c == m->prevtilesel) {
-			m->prevtilesel = NULL;
+		if (c == m->prevsel) {
+			m->prevsel = NULL;
 		}
 	}
 
@@ -5377,7 +5403,8 @@ urgent(struct wl_listener *listener, void *data) {
 	}
 }
 
-void view_in_mon(const Arg *arg, bool want_animation, Monitor *m) {
+void view_in_mon(const Arg *arg, bool want_animation, Monitor *m,
+				 bool changefocus) {
 	unsigned int i, tmptag;
 
 	if (!m || (arg->ui != (~0 & TAGMASK) && m->isoverview)) {
@@ -5424,13 +5451,25 @@ void view_in_mon(const Arg *arg, bool want_animation, Monitor *m) {
 
 toggleseltags:
 
-	focusclient(focustop(m), 1);
+	if (changefocus)
+		focusclient(focustop(m), 1);
 	arrange(m, want_animation);
 	printstatus();
 }
 
 void view(const Arg *arg, bool want_animation) {
-	view_in_mon(arg, want_animation, selmon);
+	Monitor *m;
+	if (arg->i) {
+		view_in_mon(arg, want_animation, selmon, true);
+		wl_list_for_each(m, &mons, link) {
+			if (!m->wlr_output->enabled || m == selmon)
+				continue;
+			// only arrange, not change monitor focus
+			view_in_mon(arg, want_animation, m, false);
+		}
+	} else {
+		view_in_mon(arg, want_animation, selmon, true);
+	}
 }
 
 void virtualkeyboard(struct wl_listener *listener, void *data) {
