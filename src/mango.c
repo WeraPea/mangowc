@@ -512,6 +512,10 @@ struct Monitor {
 	struct wlr_scene_optimized_blur *blur;
 	char last_surface_ws_name[256];
 	struct wlr_ext_workspace_group_handle_v1 *ext_group;
+	int overscan_top;
+	int overscan_bottom;
+	int overscan_left;
+	int overscan_right;
 };
 
 typedef struct {
@@ -2704,6 +2708,10 @@ void createmon(struct wl_listener *listener, void *data) {
 	m->isoverview = 0;
 	m->sel = NULL;
 	m->is_in_hotarea = 0;
+	m->overscan_top = 0;
+	m->overscan_bottom = 0;
+	m->overscan_left = 0;
+	m->overscan_right = 0;
 	m->tagset[0] = m->tagset[1] = 1;
 	float scale = 1;
 	m->mfact = default_mfact;
@@ -2732,6 +2740,10 @@ void createmon(struct wl_listener *listener, void *data) {
 			}
 			scale = r->scale;
 			rr = r->rr;
+			m->overscan_top = r->overscan_top;
+			m->overscan_bottom = r->overscan_bottom;
+			m->overscan_left = r->overscan_left;
+			m->overscan_right = r->overscan_right;
 
 			if (r->width > 0 && r->height > 0 && r->refresh > 0) {
 				internal_mode = get_nearest_output_mode(m->wlr_output, r->width,
@@ -4008,6 +4020,25 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 		}
 
 		wlr_cursor_move(cursor, device, dx, dy);
+		Monitor *m = xytomon(cursor->x, cursor->y);
+		if (m && (m->overscan_top > 0 || m->overscan_bottom > 0 ||
+				  m->overscan_left > 0 || m->overscan_right > 0)) {
+			double constrained_x = cursor->x;
+			double constrained_y = cursor->y;
+			if (cursor->x < m->m.x) {
+				constrained_x = m->m.x;
+			}
+			if (cursor->x > m->m.x + m->m.width) {
+				constrained_x = m->m.x + m->m.width;
+			}
+			if (cursor->y < m->m.y) {
+				constrained_y = m->m.y;
+			}
+			if (cursor->y > m->m.y + m->m.height) {
+				constrained_y = m->m.y + m->m.height;
+			}
+			wlr_cursor_warp(cursor, NULL, constrained_x, constrained_y);
+		}
 		handlecursoractivity();
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
@@ -5529,6 +5560,10 @@ void updatemons(struct wl_listener *listener, void *data) {
 		oldy = m->m.y;
 		/* Get the effective monitor geometry to use for surfaces */
 		wlr_output_layout_get_box(output_layout, m->wlr_output, &m->m);
+		m->m.x += m->overscan_left;
+		m->m.y += m->overscan_top;
+		m->m.width -= (m->overscan_left + m->overscan_right);
+		m->m.height -= (m->overscan_top + m->overscan_bottom);
 		m->w = m->m;
 		mon_pos_offsetx = m->m.x - oldx;
 		mon_pos_offsety = m->m.y - oldy;
@@ -5554,7 +5589,7 @@ void updatemons(struct wl_listener *listener, void *data) {
 		 must put it under the floating window position adjustment,
 		 Otherwise, incorrect floating window calculations will occur here.
 		 */
-		wlr_scene_output_set_position(m->scene_output, m->m.x, m->m.y);
+		wlr_scene_output_set_position(m->scene_output, m->m.x - m->overscan_left, m->m.y - m->overscan_top);
 
 		if (blur && m->blur) {
 			wlr_scene_node_set_position(&m->blur->node, m->m.x, m->m.y);

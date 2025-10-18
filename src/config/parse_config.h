@@ -109,6 +109,10 @@ typedef struct {
 	int x, y;			// 显示器位置
 	int width, height;	// 显示器分辨率
 	float refresh;		// 刷新率
+	int overscan_top;
+	int overscan_bottom;
+	int overscan_left;
+	int overscan_right;
 } ConfigMonitorRule;
 
 // 修改后的宏定义
@@ -1873,17 +1877,21 @@ void parse_option(Config *config, char *key, char *value) {
 		char raw_name[256], raw_layout[256];
 		char raw_mfact[256], raw_nmaster[256], raw_rr[256];
 		char raw_scale[256], raw_x[256], raw_y[256], raw_width[256],
-			raw_height[256], raw_refresh[256];
+			raw_height[256], raw_refresh[256], raw_overscan_top[256],
+			raw_overscan_bottom[256], raw_overscan_left[256],
+			raw_overscan_right[256];
 
 		// 先读取所有字段为字符串
 		int parsed =
 			sscanf(value,
 				   "%255[^,],%255[^,],%255[^,],%255[^,],%255[^,],%255["
-				   "^,],%255[^,],%255[^,],%255[^,],%255[^,],%255s",
+				   "^,],%255[^,],%255[^,],%255[^,],%255[^,],%255[^,],%255[^,],%255[^,],%255[^,],%255s",
 				   raw_name, raw_mfact, raw_nmaster, raw_layout, raw_rr,
-				   raw_scale, raw_x, raw_y, raw_width, raw_height, raw_refresh);
+				   raw_scale, raw_x, raw_y, raw_width, raw_height, raw_refresh,
+				   raw_overscan_top, raw_overscan_bottom, raw_overscan_left,
+				   raw_overscan_right);
 
-		if (parsed == 11) {
+		if (parsed == 15) {
 			// 修剪每个字段的空格
 			trim_whitespace(raw_name);
 			trim_whitespace(raw_mfact);
@@ -1896,6 +1904,10 @@ void parse_option(Config *config, char *key, char *value) {
 			trim_whitespace(raw_width);
 			trim_whitespace(raw_height);
 			trim_whitespace(raw_refresh);
+			trim_whitespace(raw_overscan_top);
+			trim_whitespace(raw_overscan_bottom);
+			trim_whitespace(raw_overscan_left);
+			trim_whitespace(raw_overscan_right);
 
 			// 转换修剪后的字符串为特定类型
 			rule->name = strdup(raw_name);
@@ -1909,6 +1921,10 @@ void parse_option(Config *config, char *key, char *value) {
 			rule->width = atoi(raw_width);
 			rule->height = atoi(raw_height);
 			rule->refresh = atof(raw_refresh);
+			rule->overscan_top = atoi(raw_overscan_top);
+			rule->overscan_bottom = atoi(raw_overscan_bottom);
+			rule->overscan_left = atoi(raw_overscan_left);
+			rule->overscan_right = atoi(raw_overscan_right);
 
 			if (!rule->name || !rule->layout) {
 				if (rule->name)
