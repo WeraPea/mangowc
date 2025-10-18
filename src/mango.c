@@ -4023,21 +4023,27 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 		Monitor *m = xytomon(cursor->x, cursor->y);
 		if (m && (m->overscan_top > 0 || m->overscan_bottom > 0 ||
 				  m->overscan_left > 0 || m->overscan_right > 0)) {
-			double constrained_x = cursor->x;
-			double constrained_y = cursor->y;
-			if (cursor->x < m->m.x) {
-				constrained_x = m->m.x;
+			double min_dist = -1;
+			double closest_x = cursor->x;
+			double closest_y = cursor->y;
+
+			Monitor *m_iter = NULL;
+			wl_list_for_each(m_iter, &mons, link) {
+				double point_x, point_y;
+				wlr_box_closest_point(&m_iter->m, cursor->x, cursor->y,
+									  &point_x, &point_y);
+				double dist = (cursor->x - point_x) * (cursor->x - point_x) +
+							  (cursor->y - point_y) * (cursor->y - point_y);
+				if (min_dist < 0 || dist < min_dist) {
+					min_dist = dist;
+					closest_x = point_x;
+					closest_y = point_y;
+				}
 			}
-			if (cursor->x > m->m.x + m->m.width) {
-				constrained_x = m->m.x + m->m.width;
+
+			if (cursor->x != closest_x || cursor->y != closest_y) {
+				wlr_cursor_warp(cursor, NULL, closest_x, closest_y);
 			}
-			if (cursor->y < m->m.y) {
-				constrained_y = m->m.y;
-			}
-			if (cursor->y > m->m.y + m->m.height) {
-				constrained_y = m->m.y + m->m.height;
-			}
-			wlr_cursor_warp(cursor, NULL, constrained_x, constrained_y);
 		}
 		handlecursoractivity();
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
@@ -5589,7 +5595,9 @@ void updatemons(struct wl_listener *listener, void *data) {
 		 must put it under the floating window position adjustment,
 		 Otherwise, incorrect floating window calculations will occur here.
 		 */
-		wlr_scene_output_set_position(m->scene_output, m->m.x - m->overscan_left, m->m.y - m->overscan_top);
+		wlr_scene_output_set_position(m->scene_output,
+									  m->m.x - m->overscan_left,
+									  m->m.y - m->overscan_top);
 
 		if (blur && m->blur) {
 			wlr_scene_node_set_position(&m->blur->node, m->m.x, m->m.y);
