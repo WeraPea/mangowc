@@ -113,6 +113,10 @@ typedef struct {
 	float refresh;				 // Refresh rate
 	int32_t vrr;				 // variable refresh rate
 	int32_t custom;				 // enable custom mode
+	int32_t overscan_top;
+	int32_t overscan_bottom;
+	int32_t overscan_left;
+	int32_t overscan_right;
 } ConfigMonitorRule;
 
 // 修改后的宏定义
@@ -1821,6 +1825,10 @@ bool parse_option(Config *config, char *key, char *value) {
 		rule->refresh = 0.0f;
 		rule->vrr = 0;
 		rule->custom = 0;
+		rule->overscan_top = 0;
+		rule->overscan_bottom = 0;
+		rule->overscan_left = 0;
+		rule->overscan_right = 0;
 
 		bool parse_error = false;
 		char *token = strtok(value, ",");
@@ -1860,6 +1868,14 @@ bool parse_option(Config *config, char *key, char *value) {
 					rule->vrr = CLAMP_INT(atoi(val), 0, 1);
 				} else if (strcmp(key, "custom") == 0) {
 					rule->custom = CLAMP_INT(atoi(val), 0, 1);
+				} else if (strcmp(key, "overscan_top") == 0) {
+					rule->overscan_top = atoi(val);
+				} else if (strcmp(key, "overscan_bottom") == 0) {
+					rule->overscan_bottom = atoi(val);
+				} else if (strcmp(key, "overscan_left") == 0) {
+					rule->overscan_left = atoi(val);
+				} else if (strcmp(key, "overscan_right") == 0) {
+					rule->overscan_right = atoi(val);
 				} else {
 					fprintf(stderr,
 							"\033[1m\033[31m[ERROR]:\033[33m Unknown "
