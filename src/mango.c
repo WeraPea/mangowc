@@ -602,6 +602,10 @@ struct Monitor {
 	bool is_vrr_opening;
 	bool hdr_enable;
 	bool prefer_disable;
+	int32_t overscan_top;
+	int32_t overscan_bottom;
+	int32_t overscan_left;
+	int32_t overscan_right;
 };
 
 typedef struct {
@@ -3402,6 +3406,10 @@ bool apply_rule_to_state(Monitor *m, const ConfigMonitorRule *rule,
 	m->vrr_global_enable = rule->vrr >= 0 ? rule->vrr : 0;
 	m->hdr_enable = rule->hdr >= 0 ? rule->hdr : 0;
 	m->prefer_disable = rule->disable >= 0 ? rule->disable : 0;
+  m->overscan_top = rule->overscan_top;
+  m->overscan_bottom = rule->overscan_bottom;
+  m->overscan_left = rule->overscan_left;
+  m->overscan_right = rule->overscan_right;
 
 	if (rule->width > 0 && rule->height > 0 && rule->refresh > 0) {
 		struct wlr_output_mode *internal_mode = get_nearest_output_mode(
@@ -3478,6 +3486,10 @@ void createmon(struct wl_listener *listener, void *data) {
 	m->is_in_hotarea = 0;
 	m->m.x = INT32_MAX;
 	m->m.y = INT32_MAX;
+	m->overscan_top = 0;
+	m->overscan_bottom = 0;
+	m->overscan_left = 0;
+	m->overscan_right = 0;
 	float scale = 1;
 	enum wl_output_transform rr = WL_OUTPUT_TRANSFORM_NORMAL;
 
@@ -4994,6 +5006,31 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 		}
 
 		wlr_cursor_move(cursor, device, dx, dy);
+		Monitor *m = xytomon(cursor->x, cursor->y);
+		if (m && (m->overscan_top > 0 || m->overscan_bottom > 0 ||
+				  m->overscan_left > 0 || m->overscan_right > 0)) {
+			double min_dist = -1;
+			double closest_x = cursor->x;
+			double closest_y = cursor->y;
+
+			Monitor *m_iter = NULL;
+			wl_list_for_each(m_iter, &mons, link) {
+				double point_x, point_y;
+				wlr_box_closest_point(&m_iter->m, cursor->x, cursor->y,
+									  &point_x, &point_y);
+				double dist = (cursor->x - point_x) * (cursor->x - point_x) +
+							  (cursor->y - point_y) * (cursor->y - point_y);
+				if (min_dist < 0 || dist < min_dist) {
+					min_dist = dist;
+					closest_x = point_x;
+					closest_y = point_y;
+				}
+			}
+
+			if (cursor->x != closest_x || cursor->y != closest_y) {
+				wlr_cursor_warp(cursor, NULL, closest_x, closest_y);
+			}
+		}
 		handlecursoractivity();
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
@@ -7010,6 +7047,10 @@ void updatemons(struct wl_listener *listener, void *data) {
 		oldy = m->m.y;
 		/* Get the effective monitor geometry to use for surfaces */
 		wlr_output_layout_get_box(output_layout, m->wlr_output, &m->m);
+		m->m.x += m->overscan_left;
+		m->m.y += m->overscan_top;
+		m->m.width -= (m->overscan_left + m->overscan_right);
+		m->m.height -= (m->overscan_top + m->overscan_bottom);
 		m->w = m->m;
 		mon_pos_offsetx = m->m.x - oldx;
 		mon_pos_offsety = m->m.y - oldy;
@@ -7036,7 +7077,9 @@ void updatemons(struct wl_listener *listener, void *data) {
 		 must put it under the floating window position adjustment,
 		 Otherwise, incorrect floating window calculations will occur here.
 		 */
-		wlr_scene_output_set_position(m->scene_output, m->m.x, m->m.y);
+		wlr_scene_output_set_position(m->scene_output,
+									  m->m.x - m->overscan_left,
+									  m->m.y - m->overscan_top);
 
 		if (config.blur && m->blur) {
 			wlr_scene_node_set_position(&m->blur->node, m->m.x, m->m.y);
