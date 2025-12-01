@@ -265,6 +265,8 @@ typedef struct {
 	unsigned int send_events_mode;
 	unsigned int button_map;
 
+	int tablet_rotation;
+
 	int blur;
 	int blur_layer;
 	int blur_optimized;
@@ -1458,6 +1460,8 @@ void parse_option(Config *config, char *key, char *value) {
 		config->send_events_mode = atoi(value);
 	} else if (strcmp(key, "button_map") == 0) {
 		config->button_map = atoi(value);
+	} else if (strcmp(key, "tablet_rotation") == 0) {
+		config->tablet_rotation = CLAMP_INT(atoi(value), 0, 7);
 	} else if (strcmp(key, "gappih") == 0) {
 		config->gappih = atoi(value);
 	} else if (strcmp(key, "gappiv") == 0) {
