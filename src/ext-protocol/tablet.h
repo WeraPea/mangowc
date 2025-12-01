@@ -18,6 +18,85 @@ static void tablettoolproximity(struct wl_listener *listener, void *data);
 static void tablettoolaxis(struct wl_listener *listener, void *data);
 static void tablettoolbutton(struct wl_listener *listener, void *data);
 static void tablettooltip(struct wl_listener *listener, void *data);
+
+static void transform_tablet_event(int32_t transform, double *x, double *y,
+								   double *dx, double *dy, bool *change_x,
+								   bool *change_y) {
+	double temp_abs, temp_delta;
+	bool orig_change_x = *change_x;
+	bool orig_change_y = *change_y;
+
+	switch (transform) {
+	case 0:
+		break;
+	case 1:
+		temp_abs = *x;
+		*x = 1.0 - *y;
+		*y = temp_abs;
+
+		temp_delta = *dx;
+		*dx = -(*dy);
+		*dy = temp_delta;
+
+		*change_x = orig_change_y;
+		*change_y = orig_change_x;
+		break;
+	case 2:
+		*x = 1.0 - *x;
+		*y = 1.0 - *y;
+
+		*dx = -(*dx);
+		*dy = -(*dy);
+		break;
+	case 3:
+		temp_abs = *x;
+		*x = *y;
+		*y = 1.0 - temp_abs;
+
+		temp_delta = *dx;
+		*dx = *dy;
+		*dy = -temp_delta;
+
+		*change_x = orig_change_y;
+		*change_y = orig_change_x;
+		break;
+	case 4:
+		*x = 1.0 - *x;
+
+		*dx = -(*dx);
+		break;
+	case 5:
+		temp_abs = *x;
+		*x = *y;
+		*y = temp_abs;
+
+		temp_delta = *dx;
+		*dx = *dy;
+		*dy = temp_delta;
+
+		*change_x = orig_change_y;
+		*change_y = orig_change_x;
+		break;
+	case 6:
+		*y = 1.0 - *y;
+
+		*dy = -(*dy);
+		break;
+	case 7:
+		temp_abs = *x;
+		*x = 1.0 - *y;
+		*y = 1.0 - temp_abs;
+
+		temp_delta = *dx;
+		*dx = -(*dy);
+		*dy = -temp_delta;
+
+		*change_x = orig_change_y;
+		*change_y = orig_change_x;
+		break;
+	}
+}
+
 static struct wlr_tablet_manager_v2 *tablet_mgr;
 static struct wlr_tablet_v2_tablet *tablet = NULL;
 static struct wlr_tablet_v2_tablet_tool *tablet_tool = NULL;
@@ -104,6 +183,11 @@ void tablettoolmotion(struct wlr_tablet_v2_tablet_tool *tool, bool change_x,
 
 	if (!change_x && !change_y)
 		return;
+
+	if (config.tablet_rotation != WL_OUTPUT_TRANSFORM_NORMAL) {
+		transform_tablet_event(config.tablet_rotation, &x, &y, &dx, &dy,
+							   &change_x, &change_y);
+	}
 
 	tabletapplymap(tablet->wlr_tablet->width_mm, tablet->wlr_tablet->height_mm,
 				   (struct wlr_fbox){0}, &x, &y);
