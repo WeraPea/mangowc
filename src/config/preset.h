@@ -161,6 +161,8 @@ int32_t middle_button_emulation = 0;
 int32_t single_scratchpad = 1;
 int32_t edge_scroller_pointer_focus = 1;
 
+int32_t tablet_rotation = 0;
+
 /* You can choose between:
 LIBINPUT_CONFIG_SCROLL_NO_SCROLL
 LIBINPUT_CONFIG_SCROLL_2FG
