@@ -272,6 +272,8 @@ typedef struct {
 
 	double axis_scroll_factor;
 
+	int tablet_rotation;
+
 	int blur;
 	int blur_layer;
 	int blur_optimized;
@@ -1513,6 +1515,8 @@ void parse_option(Config *config, char *key, char *value) {
 		config->button_map = atoi(value);
 	} else if (strcmp(key, "axis_scroll_factor") == 0) {
 		config->axis_scroll_factor = atof(value);
+	} else if (strcmp(key, "tablet_rotation") == 0) {
+		config->tablet_rotation = CLAMP_INT(atoi(value), 0, 7);
 	} else if (strcmp(key, "gappih") == 0) {
 		config->gappih = atoi(value);
 	} else if (strcmp(key, "gappiv") == 0) {
