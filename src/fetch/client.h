@@ -286,9 +286,17 @@ Client *find_client_by_direction(Client *tc, const Arg *arg,
 		}
 	}
 
-	if (tempSameMonitorFocusClients)
+	if (tempSameMonitorFocusClients) {
 		return tempSameMonitorFocusClients;
-	return tempFocusClients;
+	} else {
+		if (tempFocusClients) {
+			Monitor *tm = tempFocusClients->mon;
+			if (tm->pertag->ltidxs[tm->pertag->curtag]->id == MONOCLE ||
+				(tm->sel && tm->sel->isfullscreen))
+				return tm->sel;
+		}
+		return tempFocusClients;
+	}
 }
 
 Client *direction_select(const Arg *arg) {
