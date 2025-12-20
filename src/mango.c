@@ -5329,8 +5329,10 @@ void touchmotion(struct wl_listener *listener, void *data) {
 	double lx, ly;
 	double sx, sy;
 	double dx, dy;
+	int node_x, node_y;
 	struct wlr_surface *surface;
 	Client *c = NULL;
+	struct wlr_scene_tree *tree;
 	struct wlr_touch_point *p = NULL;
 
 	if (emulating_pointer_from_touch) {
@@ -5353,34 +5355,29 @@ void touchmotion(struct wl_listener *listener, void *data) {
 	wlr_cursor_absolute_to_layout_coords(cursor, &event->touch->base, event->x,
 										 event->y, &lx, &ly);
 	surface = p->surface;
-	c = surface ? get_client_from_surface(surface) : NULL;
+	if (surface && surface->data) {
+		tree = surface->data;
+		wlr_scene_node_coords(&tree->node, &node_x, &node_y);
+		sx = lx - node_x;
+		sy = ly - node_y;
 
-	if (!c) {
+		toplevel_from_wlr_surface(surface, &c, NULL);
+		if (sloppyfocus && c)
+			focusclient(c, 0);
+
+		wlr_seat_touch_point_focus(seat, surface, event->time_msec,
+								   event->touch_id, sx, sy);
+		wlr_seat_touch_notify_motion(seat, event->time_msec, event->touch_id,
+									 sx, sy);
+
+		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+	} else {
 		if (sloppyfocus)
 			focusclient(NULL, 0);
 		wlr_seat_touch_point_clear_focus(seat, event->time_msec,
 										 event->touch_id);
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
-		return;
 	}
-
-	if (c->type == XDGShell || c->type == X11) {
-		sx = lx - c->current.x;
-		sy = ly - c->current.y;
-		if (sloppyfocus)
-			focusclient(c, 0);
-	} else {
-		LayerSurface *l = (LayerSurface *)c;
-		sx = lx - l->current.x;
-		sy = ly - l->current.y;
-	}
-
-	wlr_seat_touch_point_focus(seat, surface, event->time_msec, event->touch_id,
-							   sx, sy);
-	wlr_seat_touch_notify_motion(seat, event->time_msec, event->touch_id, sx,
-								 sy);
-
-	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 }
 
 void tag_client(const Arg *arg, Client *target_client) {
