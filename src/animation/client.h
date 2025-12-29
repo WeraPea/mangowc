@@ -840,9 +840,6 @@ void init_fadeout_client(Client *c) {
 	fadeout_cient->animation.time_started = get_now_in_ms();
 	wlr_scene_node_set_enabled(&fadeout_cient->scene->node, true);
 	wl_list_insert(&fadeout_clients, &fadeout_cient->fadeout_link);
-
-	// 请求刷新屏幕
-	request_fresh_all_monitors();
 }
 
 void client_commit(Client *c) {
@@ -860,8 +857,6 @@ void client_commit(Client *c) {
 		c->animation.running = true;
 		c->animation.should_animate = false;
 	}
-	// 请求刷新屏幕
-	request_fresh_all_monitors();
 }
 
 void client_set_pending_state(Client *c) {
