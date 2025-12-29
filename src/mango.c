@@ -4265,7 +4265,6 @@ void rendermon(struct wl_listener *listener, void *data) {
 	struct wl_list *layer_list;
 	bool frame_allow_tearing = false;
 	struct timespec now;
-	bool need_more_frames = false;
 
 	if (session && !session->active) {
 		return;
@@ -4280,21 +4279,21 @@ void rendermon(struct wl_listener *listener, void *data) {
 	for (i = 0; i < LENGTH(m->layers); i++) {
 		layer_list = &m->layers[i];
 		wl_list_for_each_safe(l, tmpl, layer_list, link) {
-			need_more_frames = layer_draw_frame(l) || need_more_frames;
+			layer_draw_frame(l);
 		}
 	}
 
 	wl_list_for_each_safe(c, tmp, &fadeout_clients, fadeout_link) {
-		need_more_frames = client_draw_fadeout_frame(c) || need_more_frames;
+		client_draw_fadeout_frame(c);
 	}
 
 	wl_list_for_each_safe(l, tmpl, &fadeout_layers, fadeout_link) {
-		need_more_frames = layer_draw_fadeout_frame(l) || need_more_frames;
+		layer_draw_fadeout_frame(l);
 	}
 
 	// 绘制客户端
 	wl_list_for_each(c, &clients, link) {
-		need_more_frames = client_draw_frame(c) || need_more_frames;
+		client_draw_frame(c);
 		if (!animations && !(allow_tearing && frame_allow_tearing) &&
 			c->configure_serial && !c->isfloating &&
 			client_is_rendered_on_mon(c, m) && !client_is_stopped(c)) {

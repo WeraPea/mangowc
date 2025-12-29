@@ -1025,12 +1025,12 @@ void resize(Client *c, struct wlr_box geo, int interact) {
 	setborder_color(c);
 }
 
-bool client_draw_fadeout_frame(Client *c) {
+void client_draw_fadeout_frame(Client *c) {
 	if (!c)
-		return false;
+		return;
 
 	fadeout_client_animation_next_tick(c);
-	return true;
+	return;
 }
 
 void client_set_focused_opacity_animation(Client *c) {
@@ -1180,13 +1180,14 @@ bool client_apply_focus_opacity(Client *c) {
 	return false;
 }
 
-bool client_draw_frame(Client *c) {
+void client_draw_frame(Client *c) {
 
 	if (!c || !client_surface(c)->mapped)
-		return false;
+		return;
 
 	if (!c->need_output_flush) {
-		return client_apply_focus_opacity(c);
+		client_apply_focus_opacity(c);
+		return;
 	}
 
 	if (animations && c->animation.running) {
@@ -1200,5 +1201,5 @@ bool client_draw_frame(Client *c) {
 		c->need_output_flush = false;
 	}
 	client_apply_focus_opacity(c);
-	return true;
+	return;
 }

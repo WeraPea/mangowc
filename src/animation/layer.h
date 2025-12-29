@@ -548,17 +548,17 @@ void layer_commit(LayerSurface *l) {
 	}
 }
 
-bool layer_draw_frame(LayerSurface *l) {
+void layer_draw_frame(LayerSurface *l) {
 
 	if (!l || !l->mapped)
-		return false;
+		return;
 
 	if (!l->need_output_flush)
-		return false;
+		return;
 
 	if (l->layer_surface->current.layer != ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
 		l->layer_surface->current.layer != ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY) {
-		return false;
+		return;
 	}
 
 	if (animations && layer_animations && l->animation.running && !l->noanim) {
@@ -568,13 +568,13 @@ bool layer_draw_frame(LayerSurface *l) {
 		layer_draw_shadow(l);
 		l->need_output_flush = false;
 	}
-	return true;
+	return;
 }
 
-bool layer_draw_fadeout_frame(LayerSurface *l) {
+void layer_draw_fadeout_frame(LayerSurface *l) {
 	if (!l)
-		return false;
+		return;
 
 	fadeout_layer_animation_next_tick(l);
-	return true;
+	return;
 }
