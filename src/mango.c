@@ -5394,8 +5394,7 @@ void touchdown(struct wl_listener *listener, void *data) {
 	/* Find the client under the pointer and send the event along. */
 	xytonode(lx, ly, &surface, &c, NULL, &sx, &sy);
 	if (surface != NULL && wlr_surface_accepts_touch(surface, seat)) {
-		if (sloppyfocus && c)
-			focusclient(c, 0);
+        focusclient(c, 0);
 
 		wlr_seat_touch_notify_down(seat, surface, event->time_msec,
 								   event->touch_id, sx, sy);
@@ -5494,8 +5493,7 @@ void touchmotion(struct wl_listener *listener, void *data) {
 		sy = ly - node_y;
 
 		toplevel_from_wlr_surface(surface, &c, NULL);
-		if (sloppyfocus && c)
-			focusclient(c, 0);
+        focusclient(c, 0);
 
 		wlr_seat_touch_point_focus(seat, surface, event->time_msec,
 								   event->touch_id, sx, sy);
@@ -5504,8 +5502,7 @@ void touchmotion(struct wl_listener *listener, void *data) {
 
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 	} else {
-		if (sloppyfocus)
-			focusclient(NULL, 0);
+        focusclient(NULL, 0);
 		wlr_seat_touch_point_clear_focus(seat, event->time_msec,
 										 event->touch_id);
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
