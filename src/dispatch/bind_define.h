@@ -1866,3 +1866,43 @@ int32_t scroller_stack(const Arg *arg) {
 	arrange(selmon, false, false);
 	return 0;
 }
+
+/* Screen zoom functions */
+
+static void screen_zoom_start_animation(void) { zoom_animating = 1; }
+
+int32_t screen_zoom_in(const Arg *arg) {
+	zoom_target += config.zoom_speed;
+	if (zoom_target > config.zoom_max)
+		zoom_target = config.zoom_max;
+	screen_zoom_start_animation();
+	request_fresh_all_monitors();
+	return 0;
+}
+
+int32_t screen_zoom_out(const Arg *arg) {
+	zoom_target -= config.zoom_speed;
+	if (zoom_target < 1.0f)
+		zoom_target = 1.0f;
+	screen_zoom_start_animation();
+	request_fresh_all_monitors();
+	return 0;
+}
+
+int32_t screen_zoom_reset(const Arg *arg) {
+	zoom_target = 1.0f;
+	screen_zoom_start_animation();
+	request_fresh_all_monitors();
+	return 0;
+}
+
+int32_t screen_zoom_set(const Arg *arg) {
+	zoom_target = arg->f;
+	if (zoom_target < 1.0f)
+		zoom_target = 1.0f;
+	if (zoom_target > config.zoom_max)
+		zoom_target = config.zoom_max;
+	screen_zoom_start_animation();
+	request_fresh_all_monitors();
+	return 0;
+}
