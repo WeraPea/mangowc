@@ -84,3 +84,7 @@ void dwindle_toggle_split_direction(const Arg *arg);
 void dwindle_split_horizontal(const Arg *arg);
 void dwindle_split_vertical(const Arg *arg);
 void focusid(const Arg *arg);
+void screen_zoom_in(const Arg *arg);
+void screen_zoom_out(const Arg *arg);
+void screen_zoom_reset(const Arg *arg);
+void screen_zoom_set(const Arg *arg);

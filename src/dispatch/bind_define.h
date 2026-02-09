@@ -2247,3 +2247,39 @@ void load_config_file(const Arg *arg) {
 	reload_config(arg);
 	return;
 }
+
+/* Screen zoom functions */
+
+static void screen_zoom_start_animation(void) { zoom_animating = 1; }
+
+void screen_zoom_in(const Arg *arg) {
+	zoom_target += config.zoom_speed;
+	if (zoom_target > config.zoom_max)
+		zoom_target = config.zoom_max;
+	screen_zoom_start_animation();
+	request_fresh_all_monitors();
+}
+
+void screen_zoom_out(const Arg *arg) {
+	zoom_target -= config.zoom_speed;
+	if (zoom_target < 1.0f)
+		zoom_target = 1.0f;
+	screen_zoom_start_animation();
+	request_fresh_all_monitors();
+}
+
+void screen_zoom_reset(const Arg *arg) {
+	zoom_target = 1.0f;
+	screen_zoom_start_animation();
+	request_fresh_all_monitors();
+}
+
+void screen_zoom_set(const Arg *arg) {
+	zoom_target = arg->f;
+	if (zoom_target < 1.0f)
+		zoom_target = 1.0f;
+	if (zoom_target > config.zoom_max)
+		zoom_target = config.zoom_max;
+	screen_zoom_start_animation();
+	request_fresh_all_monitors();
+}
