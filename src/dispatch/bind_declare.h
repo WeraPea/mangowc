@@ -71,3 +71,7 @@ int32_t enable_monitor(const Arg *arg);
 int32_t toggle_monitor(const Arg *arg);
 int32_t scroller_stack(const Arg *arg);
 int32_t toggle_all_floating(const Arg *arg);
+int32_t screen_zoom_in(const Arg *arg);
+int32_t screen_zoom_out(const Arg *arg);
+int32_t screen_zoom_reset(const Arg *arg);
+int32_t screen_zoom_set(const Arg *arg);

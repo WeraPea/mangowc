@@ -30,7 +30,11 @@
 #include <wlr/backend/wayland.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/render/allocator.h>
+#include <wlr/render/drm_format_set.h>
+#include <wlr/render/pass.h>
+#include <wlr/render/swapchain.h>
 #include <wlr/render/wlr_renderer.h>
+#include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_alpha_modifier_v1.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
@@ -810,6 +814,8 @@ static void init_client_properties(Client *c);
 static float *get_border_color(Client *c);
 static void clear_fullscreen_and_maximized_state(Monitor *m);
 static void request_fresh_all_monitors(void);
+static void screen_zoom_update(void);
+static void render_zoomed(Monitor *m);
 static Client *find_client_by_direction(Client *tc, const Arg *arg,
 										bool findfloating, bool ignore_align);
 static void exit_scroller_stack(Client *c);
@@ -916,7 +922,13 @@ static uint32_t swipe_fingers = 0;
 static double swipe_dx = 0;
 static double swipe_dy = 0;
 
+float zoom_level = 1.0f;
+float zoom_target = 1.0f;
+int32_t zoom_animating = 0;
+
 bool render_border = true;
+
+static struct wlr_swapchain *zoom_swapchain = NULL;
 
 uint32_t chvt_backup_tag = 0;
 bool allow_frame_scheduling = true;
@@ -4720,6 +4732,151 @@ void client_set_opacity(Client *c, double opacity) {
 								   scene_buffer_apply_opacity, &opacity);
 }
 
+static void screen_zoom_update(void) {
+	if (!zoom_animating)
+		return;
+
+	float diff = zoom_target - zoom_level;
+	if (fabsf(diff) < 0.001f) {
+		zoom_level = zoom_target;
+		zoom_animating = 0;
+		if (zoom_level <= 1.0f) {
+			zoom_level = 1.0f;
+			/* Free zoom swapchain when not zoomed */
+			if (zoom_swapchain) {
+				wlr_swapchain_destroy(zoom_swapchain);
+				zoom_swapchain = NULL;
+			}
+		}
+		return;
+	}
+
+	/* Smooth ease-out interpolation */
+	zoom_level += diff * 0.15f;
+}
+
+static void render_zoomed(Monitor *m) {
+	struct wlr_output *output = m->wlr_output;
+	int32_t width = output->width;
+	int32_t height = output->height;
+
+	/* Build normal scene state */
+	struct wlr_output_state state = {0};
+	wlr_output_state_init(&state);
+	if (!wlr_scene_output_build_state(m->scene_output, &state, NULL)) {
+		wlr_log(WLR_ERROR, "[%s:%d] Failed to build zoom scene state", __FILE__,
+				__LINE__);
+		wlr_output_state_finish(&state);
+		return;
+	}
+
+	/* Ensure zoom swapchain exists and matches output size */
+	if (!zoom_swapchain || zoom_swapchain->width != width ||
+		zoom_swapchain->height != height) {
+		if (zoom_swapchain)
+			wlr_swapchain_destroy(zoom_swapchain);
+
+		const struct wlr_drm_format_set *formats =
+			wlr_renderer_get_texture_formats(drw, alloc->buffer_caps);
+		const struct wlr_drm_format *fmt =
+			wlr_drm_format_set_get(formats, output->render_format);
+		if (!fmt) {
+			wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom swapchain",
+					__FILE__, __LINE__);
+			wlr_output_commit_state(output, &state);
+			wlr_output_state_finish(&state);
+			return;
+		}
+		zoom_swapchain = wlr_swapchain_create(alloc, width, height, fmt);
+		if (!zoom_swapchain) {
+			wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom swapchain",
+					__FILE__, __LINE__);
+			wlr_output_commit_state(output, &state);
+			wlr_output_state_finish(&state);
+			return;
+		}
+	}
+
+	/* Acquire zoom buffer */
+	struct wlr_buffer *zoom_buf = wlr_swapchain_acquire(zoom_swapchain);
+	if (!zoom_buf) {
+		wlr_output_commit_state(output, &state);
+		wlr_output_state_finish(&state);
+		return;
+	}
+
+	/* Create texture from the scene buffer */
+	struct wlr_texture *scene_tex = wlr_texture_from_buffer(drw, state.buffer);
+	if (!scene_tex) {
+		wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom texture", __FILE__,
+				__LINE__);
+		wlr_buffer_unlock(zoom_buf);
+		wlr_output_commit_state(output, &state);
+		wlr_output_state_finish(&state);
+		return;
+	}
+
+	/* Begin render pass on zoom buffer */
+	struct wlr_render_pass *pass =
+		wlr_renderer_begin_buffer_pass(drw, zoom_buf, NULL);
+	if (!pass) {
+		wlr_log(WLR_ERROR, "[%s:%d] Failed to begin zoom render pass", __FILE__,
+				__LINE__);
+		wlr_texture_destroy(scene_tex);
+		wlr_buffer_unlock(zoom_buf);
+		wlr_output_commit_state(output, &state);
+		wlr_output_state_finish(&state);
+		return;
+	}
+
+	/* Calculate viewport centered on cursor */
+	double cx = (cursor->x - m->m.x) * output->scale;
+	double cy = (cursor->y - m->m.y) * output->scale;
+
+	double vw = (double)width / zoom_level;
+	double vh = (double)height / zoom_level;
+
+	double vx = cx - vw / 2.0;
+	double vy = cy - vh / 2.0;
+
+	/* Clamp viewport to buffer bounds */
+	if (vx < 0)
+		vx = 0;
+	if (vy < 0)
+		vy = 0;
+	if (vx + vw > width)
+		vx = width - vw;
+	if (vy + vh > height)
+		vy = height - vh;
+
+	/* Clear and draw zoomed scene */
+	wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
+									   .box = {0, 0, width, height},
+									   .color = {0, 0, 0, 1},
+									   .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+								   });
+
+	wlr_render_pass_add_texture(pass,
+								&(struct wlr_render_texture_options){
+									.texture = scene_tex,
+									.src_box = {vx, vy, vw, vh},
+									.dst_box = {0, 0, width, height},
+									.filter_mode = WLR_SCALE_FILTER_BILINEAR,
+									.blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+								});
+
+	wlr_render_pass_submit(pass);
+	wlr_texture_destroy(scene_tex);
+
+	/* Replace buffer in output state with zoomed buffer */
+	wlr_output_state_set_buffer(&state, zoom_buf);
+	wlr_buffer_unlock(zoom_buf);
+
+	/* Commit the zoomed state */
+	wlr_output_commit_state(output, &state);
+	wlr_output_state_finish(&state);
+}
+
 void monitor_stop_skip_frame_timer(Monitor *m) {
 	if (m->skip_frame_timeout)
 		wl_event_source_timer_update(m->skip_frame_timeout, 0);
@@ -4802,8 +4959,13 @@ void rendermon(struct wl_listener *listener, void *data) {
 		monitor_stop_skip_frame_timer(m);
 	}
 
+	// Update zoom animation
+	screen_zoom_update();
+
 	// 只有在需要帧时才构建和提交状态
-	if (config.allow_tearing && frame_allow_tearing) {
+	if (zoom_level > 1.0f) {
+		render_zoomed(m);
+	} else if (config.allow_tearing && frame_allow_tearing) {
 		apply_tear_state(m);
 	} else {
 		wlr_scene_output_commit(m->scene_output, NULL);
@@ -4815,7 +4977,7 @@ skip:
 	wlr_scene_output_send_frame_done(m->scene_output, &now);
 
 	// 如果需要更多帧，确保安排下一帧
-	if (need_more_frames && allow_frame_scheduling) {
+	if ((need_more_frames && allow_frame_scheduling) || zoom_animating) {
 		request_fresh_all_monitors();
 	}
 }
