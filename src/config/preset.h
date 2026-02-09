@@ -214,3 +214,11 @@ static const char *tags[] = {
 
 float focused_opacity = 1.0;
 float unfocused_opacity = 1.0;
+
+/* screen zoom */
+float zoom_level = 1.0f;
+float zoom_target = 1.0f;
+float zoom_max = 4.0f;
+float zoom_speed = 0.2f;
+int32_t zoom_animating = 0;
+uint32_t zoom_anim_duration = 200;
