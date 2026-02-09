@@ -236,3 +236,11 @@ double shadows_blur = 15;
 int32_t shadows_position_x = 0;
 int32_t shadows_position_y = 0;
 float shadowscolor[] = COLOR(0x000000ff);
+
+/* screen zoom */
+float zoom_level = 1.0f;
+float zoom_target = 1.0f;
+float zoom_max = 4.0f;
+float zoom_speed = 0.2f;
+int32_t zoom_animating = 0;
+uint32_t zoom_anim_duration = 200;
