@@ -1739,9 +1739,8 @@ int32_t screen_zoom_in(const Arg *arg) {
 	if (!zoom_centered && zoom_level == 1.0f) {
 		Monitor *m = selmon;
 		if (m) {
-			struct wlr_output *output = m->wlr_output;
-			zoom_center_x = output->width / output->scale / 2;
-			zoom_center_y = output->height / output->scale / 2;
+			zoom_center_x = m->m.x + m->m.width / 2;
+			zoom_center_y = m->m.y + m->m.height / 2;
 		}
 	}
 
