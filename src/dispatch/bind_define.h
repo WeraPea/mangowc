@@ -344,7 +344,8 @@ int32_t moveresize(const Arg *arg) {
 
 	if (cursor_mode != CurNormal && cursor_mode != CurPressed)
 		return 0;
-	xytonode(cursor->x, cursor->y, NULL, &grabc, NULL, NULL, NULL);
+	xytonode(logical_cursor_x, logical_cursor_y, NULL, &grabc, NULL, NULL,
+			 NULL);
 	if (!grabc || client_is_unmanaged(grabc) || grabc->isfullscreen ||
 		grabc->ismaximizescreen) {
 		grabc = NULL;
@@ -359,8 +360,8 @@ int32_t moveresize(const Arg *arg) {
 	switch (cursor_mode = arg->ui) {
 	case CurMove:
 
-		grabcx = cursor->x - grabc->geom.x;
-		grabcy = cursor->y - grabc->geom.y;
+		grabcx = logical_cursor_x - grabc->geom.x;
+		grabcy = logical_cursor_y - grabc->geom.y;
 		wlr_cursor_set_xcursor(cursor, cursor_mgr, "grab");
 		break;
 	case CurResize:
@@ -368,8 +369,8 @@ int32_t moveresize(const Arg *arg) {
 		 * returns the cursor to where it started */
 		if (grabc->isfloating) {
 			rzcorner = drag_corner;
-			grabcx = (int)round(cursor->x);
-			grabcy = (int)round(cursor->y);
+			grabcx = (int)round(logical_cursor_x);
+			grabcy = (int)round(logical_cursor_y);
 			if (rzcorner == 4)
 				/* identify the closest corner index */
 				rzcorner = (grabcx - grabc->geom.x <
@@ -386,7 +387,7 @@ int32_t moveresize(const Arg *arg) {
 									  : grabc->geom.x;
 				grabcy = rzcorner & 2 ? grabc->geom.y + grabc->geom.height
 									  : grabc->geom.y;
-				wlr_cursor_warp_closest(cursor, NULL, grabcx, grabcy);
+				cursor_warp_closest(cursor, NULL, grabcx, grabcy);
 			}
 
 			wlr_cursor_set_xcursor(cursor, cursor_mgr, cursors[rzcorner]);
