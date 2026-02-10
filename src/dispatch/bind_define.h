@@ -512,7 +512,8 @@ void moveresize(const Arg *arg) {
 
 	if (cursor_mode != CurNormal && cursor_mode != CurPressed)
 		return;
-	xytonode(cursor->x, cursor->y, NULL, &grabc, NULL, NULL, NULL, NULL);
+	xytonode(logical_cursor_x, logical_cursor_y, NULL, &grabc, NULL, NULL, NULL,
+			 NULL);
 	if (!grabc || client_is_unmanaged(grabc) || grabc->isfullscreen ||
 		grabc->ismaximizescreen) {
 		grabc = NULL;
@@ -530,8 +531,8 @@ void moveresize(const Arg *arg) {
 
 	if (grabc && grabc->drag_to_tile && config.drag_tile_to_tile &&
 		config.drag_tile_small) {
-		grabc->geom.x = cursor->x - 150;
-		grabc->geom.y = cursor->y - 150;
+		grabc->geom.x = logical_cursor_x - 150;
+		grabc->geom.y = logical_cursor_y - 150;
 		grabc->geom.width = 300;
 		grabc->geom.height = 300;
 		resize(grabc, grabc->geom, 1);
@@ -539,15 +540,15 @@ void moveresize(const Arg *arg) {
 
 	switch (cursor_mode = arg->ui) {
 	case CurMove:
-		grabcx = cursor->x - grabc->geom.x;
-		grabcy = cursor->y - grabc->geom.y;
+		grabcx = logical_cursor_x - grabc->geom.x;
+		grabcy = logical_cursor_y - grabc->geom.y;
 		wlr_cursor_set_xcursor(cursor, cursor_mgr, "grab");
 		break;
 	case CurResize:
 		if (grabc->isfloating) {
 			rzcorner = config.drag_corner;
-			grabcx = (int)round(cursor->x);
-			grabcy = (int)round(cursor->y);
+			grabcx = (int)round(logical_cursor_x);
+			grabcy = (int)round(logical_cursor_y);
 			if (rzcorner == 4)
 				rzcorner = (grabcx - grabc->geom.x <
 									grabc->geom.x + grabc->geom.width - grabcx
@@ -563,7 +564,7 @@ void moveresize(const Arg *arg) {
 									  : grabc->geom.x;
 				grabcy = rzcorner & 2 ? grabc->geom.y + grabc->geom.height
 									  : grabc->geom.y;
-				wlr_cursor_warp_closest(cursor, NULL, grabcx, grabcy);
+				cursor_warp_closest(cursor, NULL, grabcx, grabcy);
 			}
 
 			wlr_cursor_set_xcursor(cursor, cursor_mgr, cursors[rzcorner]);
