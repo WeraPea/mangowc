@@ -88,3 +88,4 @@ void screen_zoom_in(const Arg *arg);
 void screen_zoom_out(const Arg *arg);
 void screen_zoom_reset(const Arg *arg);
 void screen_zoom_set(const Arg *arg);
+void screen_zoom_move(const Arg *arg);
