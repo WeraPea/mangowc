@@ -199,24 +199,28 @@ void tablettoolmotion(struct wlr_tablet_v2_tablet_tool *tool, bool change_x,
 	case WLR_TABLET_TOOL_TYPE_LENS:
 	case WLR_TABLET_TOOL_TYPE_MOUSE:
 		wlr_cursor_move(cursor, tablet->wlr_device, dx, dy);
+		screen_to_logical_coords(cursor->x, cursor->y, &logical_cursor_x,
+								 &logical_cursor_y);
 		break;
 	default:
 		wlr_cursor_warp_absolute(cursor, tablet->wlr_device, change_x ? x : NAN,
 								 change_y ? y : NAN);
+		screen_to_logical_coords(cursor->x, cursor->y, &logical_cursor_x,
+								 &logical_cursor_y);
 		break;
 	}
 
 	motionnotify(0, NULL, 0, 0, 0, 0);
 
-	xytonode(cursor->x, cursor->y, &surface, &c, NULL, &sx, &sy);
+	xytonode(logical_cursor_x, logical_cursor_y, &surface, &c, NULL, &sx, &sy);
 	if (cursor_mode == CurPressed && !seat->drag &&
 		surface != seat->pointer_state.focused_surface &&
 		toplevel_from_wlr_surface(seat->pointer_state.focused_surface, &w,
 								  &l) >= 0) {
 		c = w;
 		surface = seat->pointer_state.focused_surface;
-		sx = cursor->x - (l ? l->scene->node.x : w->geom.x);
-		sy = cursor->y - (l ? l->scene->node.y : w->geom.y);
+		sx = logical_cursor_x - (l ? l->scene->node.x : w->geom.x);
+		sy = logical_cursor_y - (l ? l->scene->node.y : w->geom.y);
 	}
 
 	if (sloppyfocus && c && c->scene->node.enabled &&
