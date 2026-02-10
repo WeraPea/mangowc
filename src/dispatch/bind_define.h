@@ -1873,16 +1873,25 @@ int32_t scroller_stack(const Arg *arg) {
 static void screen_zoom_start_animation(void) { zoom_animating = 1; }
 
 int32_t screen_zoom_in(const Arg *arg) {
-	zoom_target += config.zoom_speed;
+	zoom_target *= (1.0f + config.zoom_speed);
 	if (zoom_target > config.zoom_max)
 		zoom_target = config.zoom_max;
+	if (!config.zoom_centered && zoom_level == 1.0f) {
+		Monitor *m = selmon;
+		if (m) {
+			struct wlr_output *output = m->wlr_output;
+			zoom_center_x = output->width / output->scale / 2;
+			zoom_center_y = output->height / output->scale / 2;
+		}
+	}
+
 	screen_zoom_start_animation();
 	request_fresh_all_monitors();
 	return 0;
 }
 
 int32_t screen_zoom_out(const Arg *arg) {
-	zoom_target -= config.zoom_speed;
+	zoom_target /= (1.0f + config.zoom_speed);
 	if (zoom_target < 1.0f)
 		zoom_target = 1.0f;
 	screen_zoom_start_animation();
@@ -1905,5 +1914,15 @@ int32_t screen_zoom_set(const Arg *arg) {
 		zoom_target = config.zoom_max;
 	screen_zoom_start_animation();
 	request_fresh_all_monitors();
+	return 0;
+}
+
+int32_t screen_zoom_move(const Arg *arg) {
+	if (cursor_mode != CurNormal && cursor_mode != CurPressed)
+		return 0;
+	cursor_mode = CurZoomMove;
+	zoom_move_grab_x = logical_cursor_x;
+	zoom_move_grab_y = logical_cursor_y;
+	wlr_cursor_set_xcursor(cursor, cursor_mgr, "grab");
 	return 0;
 }
