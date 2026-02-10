@@ -814,6 +814,15 @@ static void init_client_properties(Client *c);
 static float *get_border_color(Client *c);
 static void clear_fullscreen_and_maximized_state(Monitor *m);
 static void request_fresh_all_monitors(void);
+static void get_zoom_viewport(Monitor *m, double *vx, double *vy, double *vw,
+							  double *vh);
+static void screen_to_logical_coords(double screen_x, double screen_y,
+									 double *logical_x, double *logical_y);
+static void logical_to_screen_coords(double logical_x, double logical_y,
+									 double *screen_x, double *screen_y);
+static void cursor_warp_closest(struct wlr_cursor *cur,
+								struct wlr_input_device *dev, double lx,
+								double ly);
 static void screen_zoom_update(void);
 static void render_zoomed(Monitor *m);
 static Client *find_client_by_direction(Client *tc, const Arg *arg,
@@ -917,6 +926,9 @@ static int32_t scroller_focus_lock = 0;
 static uint32_t swipe_fingers = 0;
 static double swipe_dx = 0;
 static double swipe_dy = 0;
+
+static double logical_cursor_x = 0;
+static double logical_cursor_y = 0;
 
 bool render_border = true;
 
@@ -2005,8 +2017,8 @@ void place_drag_tile_client(Client *c) {
 
 	wl_list_for_each(tc, &clients, link) {
 		if (tc != c && ISTILED(tc) && VISIBLEON(tc, c->mon)) {
-			x = tc->geom.x + (int32_t)(tc->geom.width / 2) - cursor->x;
-			y = tc->geom.y + (int32_t)(tc->geom.height / 2) - cursor->y;
+			x = tc->geom.x + (int32_t)(tc->geom.width / 2) - logical_cursor_x;
+			y = tc->geom.y + (int32_t)(tc->geom.height / 2) - logical_cursor_y;
 			temp_distant = x * x + y * y;
 			if (temp_distant < min_distant) {
 				min_distant = temp_distant;
@@ -2079,11 +2091,12 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 	switch (event->state) {
 	case WL_POINTER_BUTTON_STATE_PRESSED:
 		cursor_mode = CurPressed;
-		selmon = xytomon(cursor->x, cursor->y);
+		selmon = xytomon(logical_cursor_x, logical_cursor_y);
 		if (locked)
 			break;
 
-		xytonode(cursor->x, cursor->y, &surface, NULL, NULL, NULL, NULL);
+		xytonode(logical_cursor_x, logical_cursor_y, &surface, NULL, NULL, NULL,
+				 NULL);
 		if (toplevel_from_wlr_surface(surface, &c, &l) >= 0) {
 			if (c && c->scene->node.enabled &&
 				(!client_is_unmanaged(c) || client_wants_focus(c)))
@@ -2150,7 +2163,7 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 			if (grabc == selmon->sel) {
 				selmon->sel = NULL;
 			}
-			selmon = xytomon(cursor->x, cursor->y);
+			selmon = xytomon(logical_cursor_x, logical_cursor_y);
 			client_update_oldmonname_record(grabc, selmon);
 			setmon(grabc, selmon, 0, true);
 			selmon->prevsel = ISTILED(selmon->sel) ? selmon->sel : NULL;
@@ -3354,8 +3367,16 @@ void cursorwarptohint(void) {
 
 	toplevel_from_wlr_surface(active_constraint->surface, &c, NULL);
 	if (c && active_constraint->current.cursor_hint.enabled) {
-		wlr_cursor_warp(cursor, NULL, sx + c->geom.x + c->bw,
-						sy + c->geom.y + c->bw);
+		double lx = sx + c->geom.x + c->bw;
+		double ly = sy + c->geom.y + c->bw;
+
+		double screen_x, screen_y;
+		logical_to_screen_coords(lx, ly, &screen_x, &screen_y);
+		wlr_cursor_warp(cursor, NULL, screen_x, screen_y);
+
+		logical_cursor_x = lx;
+		logical_cursor_y = ly;
+
 		wlr_seat_pointer_warp(active_constraint->seat, sx, sy);
 	}
 }
@@ -4335,8 +4356,8 @@ void motionabsolute(struct wl_listener *listener, void *data) {
 }
 
 void resize_floating_window(Client *grabc) {
-	int cdx = (int)round(cursor->x) - grabcx;
-	int cdy = (int)round(cursor->y) - grabcy;
+	int cdx = (int)round(logical_cursor_x) - grabcx;
+	int cdy = (int)round(logical_cursor_y) - grabcy;
 
 	cdx = !(rzcorner & 1) && grabc->geom.width - 2 * (int)grabc->bw - cdx < 1
 			  ? 0
@@ -4424,15 +4445,17 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 		if (!device || device->type != WLR_INPUT_DEVICE_TOUCH) {
 			handlecursoractivity();
 		}
+		screen_to_logical_coords(cursor->x, cursor->y, &logical_cursor_x,
+								 &logical_cursor_y);
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
 		/* Update selmon (even while dragging a window) */
 		if (sloppyfocus)
-			selmon = xytomon(cursor->x, cursor->y);
+			selmon = xytomon(logical_cursor_x, logical_cursor_y);
 	}
 
 	/* Find the client under the pointer and send the event along. */
-	xytonode(cursor->x, cursor->y, &surface, &c, NULL, &sx, &sy);
+	xytonode(logical_cursor_x, logical_cursor_y, &surface, &c, NULL, &sx, &sy);
 
 	if (cursor_mode == CurPressed && !seat->drag &&
 		surface != seat->pointer_state.focused_surface &&
@@ -4440,21 +4463,22 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 								  &l) >= 0) {
 		c = w;
 		surface = seat->pointer_state.focused_surface;
-		sx = cursor->x - (l ? l->scene->node.x : w->geom.x);
-		sy = cursor->y - (l ? l->scene->node.y : w->geom.y);
+		sx = logical_cursor_x - (l ? l->scene->node.x : w->geom.x);
+		sy = logical_cursor_y - (l ? l->scene->node.y : w->geom.y);
 	}
 
 	/* Update drag icon's position */
-	wlr_scene_node_set_position(&drag_icon->node, (int32_t)round(cursor->x),
-								(int32_t)round(cursor->y));
+	wlr_scene_node_set_position(&drag_icon->node,
+								(int32_t)round(logical_cursor_x),
+								(int32_t)round(logical_cursor_y));
 
 	/* If we are currently grabbing the mouse, handle and return */
 	if (cursor_mode == CurMove) {
 		/* Move the grabbed client to the new position. */
 		grabc->iscustomsize = 1;
 		grabc->float_geom =
-			(struct wlr_box){.x = (int32_t)round(cursor->x) - grabcx,
-							 .y = (int32_t)round(cursor->y) - grabcy,
+			(struct wlr_box){.x = (int32_t)round(logical_cursor_x) - grabcx,
+							 .y = (int32_t)round(logical_cursor_y) - grabcy,
 							 .width = grabc->geom.width,
 							 .height = grabc->geom.height};
 		resize(grabc, grabc->float_geom, 1);
@@ -4515,7 +4539,7 @@ void motionrelative(struct wl_listener *listener, void *data) {
 
 	motionnotify(event->time_msec, &event->pointer->base, event->delta_x,
 				 event->delta_y, event->unaccel_dx, event->unaccel_dy);
-	toggle_hotarea(cursor->x, cursor->y);
+	toggle_hotarea(logical_cursor_x, logical_cursor_y);
 }
 
 void outputmgrapply(struct wl_listener *listener, void *data) {
@@ -4650,6 +4674,119 @@ void client_set_opacity(Client *c, double opacity) {
 								   scene_buffer_apply_opacity, &opacity);
 }
 
+static void get_zoom_viewport(Monitor *m, double *vx, double *vy, double *vw,
+							  double *vh) {
+	struct wlr_output *output = m->wlr_output;
+	int32_t width = output->width;
+	int32_t height = output->height;
+	double cx, cy;
+
+	/* Calculate viewport centered on cursor position */
+	cx = (cursor->x - m->m.x) * output->scale;
+	cy = (cursor->x - m->m.y) * output->scale;
+
+	*vw = (double)width / zoom_level;
+	*vh = (double)height / zoom_level;
+
+	*vx = cx - *vw / 2.0;
+	*vy = cy - *vh / 2.0;
+
+	/* Clamp viewport to buffer bounds */
+	if (*vx < 0)
+		*vx = 0;
+	if (*vy < 0)
+		*vy = 0;
+	if (*vx + *vw > width)
+		*vx = width - *vw;
+	if (*vy + *vh > height)
+		*vy = height - *vh;
+}
+
+static void screen_to_logical_coords(double screen_x, double screen_y,
+									 double *logical_x, double *logical_y) {
+	if (zoom_level == 1.0f) {
+		*logical_x = screen_x;
+		*logical_y = screen_y;
+		return;
+	}
+
+	Monitor *m = xytomon(screen_x, screen_y);
+	if (!m) {
+		*logical_x = screen_x;
+		*logical_y = screen_y;
+		return;
+	}
+
+	struct wlr_output *output = m->wlr_output;
+	int32_t width = output->width;
+	int32_t height = output->height;
+
+	double vx, vy, vw, vh;
+	get_zoom_viewport(m, &vx, &vy, &vw, &vh);
+
+	/* Screen coords relative to monitor */
+	double sx = (screen_x - m->m.x) * output->scale;
+	double sy = (screen_y - m->m.y) * output->scale;
+
+	/* Map from screen space to zoomed viewport */
+	double lx = vx + (sx / width) * vw;
+	double ly = vy + (sy / height) * vh;
+
+	*logical_x = (lx / output->scale) + m->m.x;
+	*logical_y = (ly / output->scale) + m->m.y;
+}
+
+static void logical_to_screen_coords(double logical_x, double logical_y,
+									 double *screen_x, double *screen_y) {
+	if (zoom_level == 1.0f) {
+		*screen_x = logical_x;
+		*screen_y = logical_y;
+		return;
+	}
+
+	Monitor *m = xytomon(logical_x, logical_y);
+	if (!m) {
+		*screen_x = logical_x;
+		*screen_y = logical_y;
+		return;
+	}
+
+	struct wlr_output *output = m->wlr_output;
+	int32_t width = output->width;
+	int32_t height = output->height;
+
+	double vx, vy, vw, vh;
+	get_zoom_viewport(m, &vx, &vy, &vw, &vh);
+
+	/* Logical coords to viewport space */
+	double lx = (logical_x - m->m.x) * output->scale;
+	double ly = (logical_y - m->m.y) * output->scale;
+
+	/* Map from zoomed viewport to screen space */
+	double sx = ((lx - vx) / vw) * width;
+	double sy = ((ly - vy) / vh) * height;
+
+	*screen_x = (sx / output->scale) + m->m.x;
+	*screen_y = (sy / output->scale) + m->m.y;
+}
+
+static void cursor_warp_closest(struct wlr_cursor *cur,
+								struct wlr_input_device *dev, double lx,
+								double ly) {
+	if (zoom_level == 1.0f) {
+		wlr_cursor_warp_closest(cur, dev, lx, ly);
+		logical_cursor_x = cur->x;
+		logical_cursor_y = cur->y;
+		return;
+	}
+	double sx, sy;
+
+	logical_to_screen_coords(lx, ly, &sx, &sy);
+	wlr_cursor_warp_closest(cur, dev, sx, sy);
+	screen_to_logical_coords(cur->x, cur->y, &logical_cursor_x,
+							 &logical_cursor_y);
+}
+
 static void screen_zoom_update(void) {
 	if (!zoom_animating)
 		return;
@@ -4677,6 +4814,7 @@ static void render_zoomed(Monitor *m) {
 	struct wlr_output *output = m->wlr_output;
 	int32_t width = output->width;
 	int32_t height = output->height;
+	double vx, vy, vw, vh;
 
 	/* Build normal scene state */
 	struct wlr_output_state state = {0};
@@ -4747,25 +4885,7 @@ static void render_zoomed(Monitor *m) {
 		return;
 	}
 
-	/* Calculate viewport centered on cursor */
-	double cx = (cursor->x - m->m.x) * output->scale;
-	double cy = (cursor->y - m->m.y) * output->scale;
-
-	double vw = (double)width / zoom_level;
-	double vh = (double)height / zoom_level;
-
-	double vx = cx - vw / 2.0;
-	double vy = cy - vh / 2.0;
-
-	/* Clamp viewport to buffer bounds */
-	if (vx < 0)
-		vx = 0;
-	if (vy < 0)
-		vy = 0;
-	if (vx + vw > width)
-		vx = width - vw;
-	if (vy + vh > height)
-		vy = height - vh;
+	get_zoom_viewport(m, &vx, &vy, &vw, &vh);
 
 	/* Clear and draw zoomed scene */
 	wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
@@ -5161,13 +5281,15 @@ run(char *startup_cmd) {
 
 	/* At this point the outputs are initialized, choose initial selmon
 	 * based on cursor position, and set default cursor image */
-	selmon = xytomon(cursor->x, cursor->y);
+	selmon = xytomon(logical_cursor_x, logical_cursor_y);
 
 	/* TODO hack to get cursor to display in its initial location (100, 100)
 	 * instead of (0, 0) and then jumping. still may not be fully
 	 * initialized, as the image/coordinates are not transformed for the
 	 * monitor when displayed here */
 	wlr_cursor_warp_closest(cursor, NULL, cursor->x, cursor->y);
+	screen_to_logical_coords(cursor->x, cursor->y, &logical_cursor_x,
+							 &logical_cursor_y);
 	wlr_cursor_set_xcursor(cursor, cursor_mgr, "left_ptr");
 	handlecursoractivity();
 
@@ -6785,16 +6907,16 @@ void virtualkeyboard(struct wl_listener *listener, void *data) {
 
 void warp_cursor(const Client *c) {
 	if (INSIDEMON(c)) {
-		wlr_cursor_warp_closest(cursor, NULL, c->geom.x + c->geom.width / 2.0,
-								c->geom.y + c->geom.height / 2.0);
+		cursor_warp_closest(cursor, NULL, c->geom.x + c->geom.width / 2.0,
+							c->geom.y + c->geom.height / 2.0);
 		motionnotify(0, NULL, 0, 0, 0, 0);
 	}
 }
 
 void warp_cursor_to_selmon(Monitor *m) {
 
-	wlr_cursor_warp_closest(cursor, NULL, m->w.x + m->w.width / 2.0,
-							m->w.y + m->w.height / 2.0);
+	cursor_warp_closest(cursor, NULL, m->w.x + m->w.width / 2.0,
+						m->w.y + m->w.height / 2.0);
 	wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
 	handlecursoractivity();
 }
