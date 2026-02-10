@@ -154,9 +154,9 @@ enum { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT };
 
 enum { VERTICAL, HORIZONTAL };
 enum { SWIPE_UP, SWIPE_DOWN, SWIPE_LEFT, SWIPE_RIGHT };
-enum { CurNormal, CurPressed, CurMove, CurResize }; /* cursor */
-enum { XDGShell, LayerShell, X11 };					/* client types */
-enum { AxisUp, AxisDown, AxisLeft, AxisRight };		// 滚轮滚动的方向
+enum { CurNormal, CurPressed, CurMove, CurResize, CurZoomMove }; /* cursor */
+enum { XDGShell, LayerShell, X11 };				/* client types */
+enum { AxisUp, AxisDown, AxisLeft, AxisRight }; // 滚轮滚动的方向
 enum {
 	LyrBg,
 	LyrBottom,
@@ -2115,8 +2115,15 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 		}
 		break;
 	case WL_POINTER_BUTTON_STATE_RELEASED:
-		/* If you released any buttons, we exit interactive move/resize mode. */
-		if (!locked && cursor_mode != CurNormal && cursor_mode != CurPressed) {
+		if (cursor_mode == CurZoomMove) {
+			cursor_mode = CurNormal;
+			wlr_seat_pointer_clear_focus(seat);
+			motionnotify(0, NULL, 0, 0, 0, 0);
+			return true;
+		} else if (!locked && cursor_mode != CurNormal &&
+				   cursor_mode != CurPressed) {
+			/* If you released any buttons, we exit interactive move/resize
+			 * mode. */
 			cursor_mode = CurNormal;
 			/* Clear the pointer focus, this way if the cursor is over a surface
 			 * we will send an enter event after which the client will provide
@@ -4206,7 +4213,7 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 			cursorconstrain(constraint);
 
 		if (active_constraint && cursor_mode != CurResize &&
-			cursor_mode != CurMove) {
+			cursor_mode != CurMove && cursor_mode != CurZoomMove) {
 			toplevel_from_wlr_surface(active_constraint->surface, &c, NULL);
 			if (c && active_constraint->surface ==
 						 seat->pointer_state.focused_surface) {
@@ -4303,6 +4310,31 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 		} else {
 			resize_tile_client(grabc, true, 0, 0, time);
 		}
+	} else if (cursor_mode == CurZoomMove) {
+		if (zoom_level != 1.0f) {
+			zoom_center_x -= (logical_cursor_x - zoom_move_grab_x);
+			zoom_center_y -= (logical_cursor_y - zoom_move_grab_y);
+
+			/* Clamp to monitor bounds */
+			Monitor *m = selmon;
+			if (m) {
+				struct wlr_output *output = m->wlr_output;
+				double margin_x =
+					(output->width / output->scale) / (2.0 * zoom_level);
+				double margin_y =
+					(output->height / output->scale) / (2.0 * zoom_level);
+
+				if (zoom_center_x < m->m.x + margin_x)
+					zoom_center_x = m->m.x + margin_x;
+				if (zoom_center_y < m->m.y + margin_y)
+					zoom_center_y = m->m.y + margin_y;
+				if (zoom_center_x > m->m.x + m->m.width - margin_x)
+					zoom_center_x = m->m.x + m->m.width - margin_x;
+				if (zoom_center_y > m->m.y + m->m.height - margin_y)
+					zoom_center_y = m->m.y + m->m.height - margin_y;
+			}
+		}
+		return;
 	}
 
 	/* If there's no client surface under the cursor, set the cursor image
@@ -4508,9 +4540,13 @@ static void get_zoom_viewport(Monitor *m, double *vx, double *vy, double *vw,
 	int32_t height = output->height;
 	double cx, cy;
 
-	/* Calculate viewport centered on cursor position */
-	cx = (cursor->x - m->m.x) * output->scale;
-	cy = (cursor->x - m->m.y) * output->scale;
+	/* Calculate viewport centered on cursor or dynamic position */
+	if (zoom_centered) {
+		zoom_center_x = cursor->x;
+		zoom_center_y = cursor->y;
+	}
+	cx = (zoom_center_x - m->m.x) * output->scale;
+	cy = (zoom_center_y - m->m.y) * output->scale;
 
 	*vw = (double)width / zoom_level;
 	*vh = (double)height / zoom_level;
@@ -4634,7 +4670,16 @@ static void screen_zoom_update(void) {
 	}
 
 	/* Smooth ease-out interpolation */
+	float old_zoom = zoom_level;
 	zoom_level += diff * 0.15f;
+
+	/* Recalculate center to maintain cursor position during animation */
+	if (!zoom_centered) {
+		zoom_center_x = logical_cursor_x - (logical_cursor_x - zoom_center_x) *
+											   (old_zoom / zoom_level);
+		zoom_center_y = logical_cursor_y - (logical_cursor_y - zoom_center_y) *
+											   (old_zoom / zoom_level);
+	}
 }
 
 static void render_zoomed(Monitor *m) {
