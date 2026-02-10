@@ -5005,7 +5005,7 @@ static void render_zoomed(Monitor *m) {
 									.texture = scene_tex,
 									.src_box = {vx, vy, vw, vh},
 									.dst_box = {0, 0, width, height},
-									.filter_mode = WLR_SCALE_FILTER_BILINEAR,
+									.filter_mode = WLR_SCALE_FILTER_NEAREST,
 									.blend_mode = WLR_RENDER_BLEND_MODE_NONE,
 								});
 
