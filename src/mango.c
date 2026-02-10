@@ -520,6 +520,7 @@ struct Monitor {
 	struct wlr_output *wlr_output;
 	struct wlr_scene_output *scene_output;
 	struct wlr_output_state pending;
+	struct wlr_swapchain *zoom_swapchain;
 	struct wl_listener frame;
 	struct wl_listener destroy;
 	struct wl_listener request_state;
@@ -823,7 +824,7 @@ static void logical_to_screen_coords(double logical_x, double logical_y,
 static void cursor_warp_closest(struct wlr_cursor *cur,
 								struct wlr_input_device *dev, double lx,
 								double ly);
-static void screen_zoom_update(void);
+static void screen_zoom_update(Monitor *m);
 static void render_zoomed(Monitor *m);
 static Client *find_client_by_direction(Client *tc, const Arg *arg,
 										bool findfloating, bool ignore_align);
@@ -943,8 +944,6 @@ double zoom_move_grab_x = 0.0f;
 double zoom_move_grab_y = 0.0f;
 
 bool render_border = true;
-
-static struct wlr_swapchain *zoom_swapchain = NULL;
 
 uint32_t chvt_backup_tag = 0;
 bool allow_frame_scheduling = true;
@@ -4909,7 +4908,7 @@ static void cursor_warp_closest(struct wlr_cursor *cur,
 							 &logical_cursor_y);
 }
 
-static void screen_zoom_update(void) {
+static void screen_zoom_update(Monitor *m) {
 	if (!zoom_animating)
 		return;
 
@@ -4920,9 +4919,9 @@ static void screen_zoom_update(void) {
 		if (zoom_level <= 1.0f) {
 			zoom_level = 1.0f;
 			/* Free zoom swapchain when not zoomed */
-			if (zoom_swapchain) {
-				wlr_swapchain_destroy(zoom_swapchain);
-				zoom_swapchain = NULL;
+			if (m->zoom_swapchain) {
+				wlr_swapchain_destroy(m->zoom_swapchain);
+				m->zoom_swapchain = NULL;
 			}
 		}
 		return;
@@ -4958,26 +4957,28 @@ static void render_zoomed(Monitor *m) {
 	}
 
 	/* Ensure zoom swapchain exists and matches output size */
-	if (!zoom_swapchain || zoom_swapchain->width != width ||
-		zoom_swapchain->height != height) {
-		if (zoom_swapchain)
-			wlr_swapchain_destroy(zoom_swapchain);
+	if (!m->zoom_swapchain || m->zoom_swapchain->width != width ||
+		m->zoom_swapchain->height != height) {
+		if (m->zoom_swapchain)
+			wlr_swapchain_destroy(m->zoom_swapchain);
 
-		const struct wlr_drm_format_set *formats =
-			wlr_renderer_get_texture_formats(drw, alloc->buffer_caps);
-		const struct wlr_drm_format *fmt =
-			wlr_drm_format_set_get(formats, output->render_format);
-		if (!fmt) {
-			wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom swapchain",
-					__FILE__, __LINE__);
+		if (!output->swapchain) {
+			wlr_log(WLR_ERROR, "[%s:%d] Output %s has no swapchain", __FILE__,
+					__LINE__, output->name);
 			wlr_output_commit_state(output, &state);
 			wlr_output_state_finish(&state);
 			return;
 		}
-		zoom_swapchain = wlr_swapchain_create(alloc, width, height, fmt);
-		if (!zoom_swapchain) {
-			wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom swapchain",
-					__FILE__, __LINE__);
+
+		/* Copy format from output's swapchain */
+		m->zoom_swapchain = wlr_swapchain_create(
+			output->allocator, width, height,
+			&output->swapchain->format // Use output's proven working format
+		);
+
+		if (!m->zoom_swapchain) {
+			wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom swapchain for %s",
+					__FILE__, __LINE__, output->name);
 			wlr_output_commit_state(output, &state);
 			wlr_output_state_finish(&state);
 			return;
@@ -4985,7 +4986,7 @@ static void render_zoomed(Monitor *m) {
 	}
 
 	/* Acquire zoom buffer */
-	struct wlr_buffer *zoom_buf = wlr_swapchain_acquire(zoom_swapchain);
+	struct wlr_buffer *zoom_buf = wlr_swapchain_acquire(m->zoom_swapchain);
 	if (!zoom_buf) {
 		wlr_output_commit_state(output, &state);
 		wlr_output_state_finish(&state);
@@ -5129,7 +5130,7 @@ void rendermon(struct wl_listener *listener, void *data) {
 	}
 
 	// Update zoom animation
-	screen_zoom_update();
+	screen_zoom_update(m);
 
 	// 只有在需要帧时才构建和提交状态
 	if (zoom_level > 1.0f) {
