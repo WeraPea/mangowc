@@ -776,8 +776,8 @@ void client_set_drop_area(Client *c) {
 	int32_t client_width = c->geom.width - 2 * bw;
 	int32_t client_height = c->geom.height - 2 * bw;
 
-	double rel_x = cursor->x - c->geom.x - bw;
-	double rel_y = cursor->y - c->geom.y - bw;
+	double rel_x = logical_cursor_x - c->geom.x - bw;
+	double rel_y = logical_cursor_y - c->geom.y - bw;
 
 	struct wlr_box drop_box;
 	const Layout *cur_layout = c->mon->pertag->ltidxs[c->mon->pertag->curtag];
@@ -1166,7 +1166,7 @@ void client_animation_next_tick(Client *c) {
 
 		Client *pointer_c = NULL;
 		double sx, sy;
-		xytonode(cursor->x, cursor->y, NULL, &pointer_c, NULL, NULL, &sx, &sy);
+		xytonode(logical_cursor_x, logical_cursor_y, NULL, &pointer_c, NULL, NULL, &sx, &sy);
 		struct wlr_surface *surface =
 			pointer_c && pointer_c == c ? client_surface(pointer_c) : NULL;
 
