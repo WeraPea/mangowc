@@ -152,21 +152,21 @@ void resize_tile_master_horizontal(Client *grabc, bool isdrag, int32_t offsetx,
 	}
 
 	if (!start_drag_window && isdrag) {
-		drag_begin_cursorx = cursor->x;
-		drag_begin_cursory = cursor->y;
+		drag_begin_cursorx = logical_cursor_x;
+		drag_begin_cursory = logical_cursor_y;
 		start_drag_window = true;
 		grabc->old_master_mfact_per = grabc->master_mfact_per;
 		grabc->old_master_inner_per = grabc->master_inner_per;
 		grabc->old_stack_inner_per = grabc->stack_inner_per;
 		grabc->cursor_in_upper_half =
-			cursor->y < grabc->geom.y + grabc->geom.height / 2;
+			logical_cursor_y < grabc->geom.y + grabc->geom.height / 2;
 		grabc->cursor_in_left_half =
-			cursor->x < grabc->geom.x + grabc->geom.width / 2;
+			logical_cursor_x < grabc->geom.x + grabc->geom.width / 2;
 		grabc->drag_begin_geom = grabc->geom;
 	} else {
 		if (isdrag) {
-			offsetx = cursor->x - drag_begin_cursorx;
-			offsety = cursor->y - drag_begin_cursory;
+			offsetx = logical_cursor_x - drag_begin_cursorx;
+			offsety = logical_cursor_y - drag_begin_cursory;
 		} else {
 			grabc->old_master_mfact_per = grabc->master_mfact_per;
 			grabc->old_master_inner_per = grabc->master_inner_per;
@@ -193,8 +193,8 @@ void resize_tile_master_horizontal(Client *grabc, bool isdrag, int32_t offsetx,
 			moving_up = offsety < 0;
 			moving_down = offsety > 0;
 		} else {
-			moving_up = cursor->y < drag_begin_cursory;
-			moving_down = cursor->y > drag_begin_cursory;
+			moving_up = logical_cursor_y < drag_begin_cursory;
+			moving_down = logical_cursor_y > drag_begin_cursory;
 		}
 
 		if (grabc->ismaster && !prev) {
@@ -370,21 +370,21 @@ void resize_tile_master_vertical(Client *grabc, bool isdrag, int32_t offsetx,
 	}
 
 	if (!start_drag_window && isdrag) {
-		drag_begin_cursorx = cursor->x;
-		drag_begin_cursory = cursor->y;
+		drag_begin_cursorx = logical_cursor_x;
+		drag_begin_cursory = logical_cursor_y;
 		start_drag_window = true;
 		grabc->old_master_mfact_per = grabc->master_mfact_per;
 		grabc->old_master_inner_per = grabc->master_inner_per;
 		grabc->old_stack_inner_per = grabc->stack_inner_per;
 		grabc->cursor_in_upper_half =
-			cursor->y < grabc->geom.y + grabc->geom.height / 2;
+			logical_cursor_y < grabc->geom.y + grabc->geom.height / 2;
 		grabc->cursor_in_left_half =
-			cursor->x < grabc->geom.x + grabc->geom.width / 2;
+			logical_cursor_x < grabc->geom.x + grabc->geom.width / 2;
 		grabc->drag_begin_geom = grabc->geom;
 	} else {
 		if (isdrag) {
-			offsetx = cursor->x - drag_begin_cursorx;
-			offsety = cursor->y - drag_begin_cursory;
+			offsetx = logical_cursor_x - drag_begin_cursorx;
+			offsety = logical_cursor_y - drag_begin_cursory;
 		} else {
 			grabc->old_master_mfact_per = grabc->master_mfact_per;
 			grabc->old_master_inner_per = grabc->master_inner_per;
@@ -411,8 +411,8 @@ void resize_tile_master_vertical(Client *grabc, bool isdrag, int32_t offsetx,
 			moving_left = offsetx < 0;
 			moving_right = offsetx > 0;
 		} else {
-			moving_left = cursor->x < drag_begin_cursorx;
-			moving_right = cursor->x > drag_begin_cursorx;
+			moving_left = logical_cursor_x < drag_begin_cursorx;
+			moving_right = logical_cursor_x > drag_begin_cursorx;
 		}
 
 		if (grabc->ismaster && !prev) {
@@ -568,8 +568,8 @@ void resize_tile_scroller(Client *grabc, bool isdrag, int32_t offsetx,
 	float new_stack_proportion;
 
 	if (!start_drag_window && isdrag) {
-		drag_begin_cursorx = cursor->x;
-		drag_begin_cursory = cursor->y;
+		drag_begin_cursorx = logical_cursor_x;
+		drag_begin_cursory = logical_cursor_y;
 		start_drag_window = true;
 
 		headnode->client->old_scroller_pproportion =
@@ -577,14 +577,14 @@ void resize_tile_scroller(Client *grabc, bool isdrag, int32_t offsetx,
 		grabc->old_stack_proportion = curnode->stack_proportion;
 
 		grabc->cursor_in_left_half =
-			cursor->x < grabc->geom.x + grabc->geom.width / 2;
+			logical_cursor_x < grabc->geom.x + grabc->geom.width / 2;
 		grabc->cursor_in_upper_half =
-			cursor->y < grabc->geom.y + grabc->geom.height / 2;
+			logical_cursor_y < grabc->geom.y + grabc->geom.height / 2;
 		grabc->drag_begin_geom = grabc->geom;
 	} else {
 		if (isdrag) {
-			offsetx = cursor->x - drag_begin_cursorx;
-			offsety = cursor->y - drag_begin_cursory;
+			offsetx = logical_cursor_x - drag_begin_cursorx;
+			offsety = logical_cursor_y - drag_begin_cursory;
 		} else {
 			grabc->old_master_mfact_per = grabc->master_mfact_per;
 			grabc->old_master_inner_per = grabc->master_inner_per;
@@ -618,10 +618,10 @@ void resize_tile_scroller(Client *grabc, bool isdrag, int32_t offsetx,
 			moving_left = offsetx < 0;
 			moving_right = offsetx > 0;
 		} else {
-			moving_up = cursor->y < drag_begin_cursory;
-			moving_down = cursor->y > drag_begin_cursory;
-			moving_left = cursor->x < drag_begin_cursorx;
-			moving_right = cursor->x > drag_begin_cursorx;
+			moving_up = logical_cursor_y < drag_begin_cursory;
+			moving_down = logical_cursor_y > drag_begin_cursory;
+			moving_left = logical_cursor_x < drag_begin_cursorx;
+			moving_right = logical_cursor_x > drag_begin_cursorx;
 		}
 
 		if ((grabc->cursor_in_upper_half && moving_up) ||
