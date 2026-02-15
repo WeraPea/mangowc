@@ -30,9 +30,7 @@
         ...
       }: let
         inherit (pkgs) callPackage;
-        mango = callPackage ./nix {
-          scenefx = inputs.scenefx.packages.${system}.default;
-        };
+        mango = callPackage ./nix { };
         shellOverride = old: {
           nativeBuildInputs = old.nativeBuildInputs ++ [];
           buildInputs = old.buildInputs ++ [];
