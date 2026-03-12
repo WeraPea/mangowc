@@ -4956,11 +4956,37 @@ static void render_zoomed(Monitor *m) {
 	/* Build normal scene state */
 	struct wlr_output_state state = {0};
 	wlr_output_state_init(&state);
+
+	/* hack to have cursor overlayed on top of zoomed view when software cursors
+	 * are used or screen is being recorded
+	 * disable cursors
+	 * BUG: until cursor is updated, old cursor image still renders in case of software cursors */
+	struct wlr_output_cursor *output_cursor;
+	struct cursor_state {
+		struct wlr_output_cursor *cursor;
+		bool enabled;
+	};
+	int n = wl_list_length(&output->cursors);
+	struct cursor_state saved[n];
+	int i = 0;
+	wl_list_for_each(output_cursor, &output->cursors, link) {
+		saved[i].cursor = output_cursor;
+		saved[i].enabled = output_cursor->enabled;
+		output_cursor->enabled = false;
+		i++;
+	}
+
 	if (!wlr_scene_output_build_state(m->scene_output, &state, NULL)) {
 		wlr_log(WLR_ERROR, "[%s:%d] Failed to build zoom scene state", __FILE__,
 				__LINE__);
 		wlr_output_state_finish(&state);
+		for (i = 0; i < n; i++) {
+			saved[i].cursor->enabled = saved[i].enabled;
+		}
 		return;
+	}
+	for (i = 0; i < n; i++) {
+		saved[i].cursor->enabled = saved[i].enabled;
 	}
 
 	/* Ensure zoom swapchain exists and matches output size */
@@ -5041,6 +5067,25 @@ static void render_zoomed(Monitor *m) {
 									.filter_mode = WLR_SCALE_FILTER_NEAREST,
 									.blend_mode = WLR_RENDER_BLEND_MODE_NONE,
 								});
+
+	/* draw the cursor on top */
+	wl_list_for_each(output_cursor, &output->cursors, link) {
+		if (!output_cursor->enabled)
+			continue;
+		struct wlr_texture *cursor_tex = output_cursor->texture;
+		if (!cursor_tex)
+			continue;
+		wlr_render_pass_add_texture(
+			pass,
+			&(struct wlr_render_texture_options){
+				.texture = cursor_tex,
+				.dst_box = {(int)output_cursor->x - output_cursor->hotspot_x,
+							(int)output_cursor->y - output_cursor->hotspot_y,
+							output_cursor->width, output_cursor->height},
+				.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
+			});
+		break;
+	}
 
 	wlr_render_pass_submit(pass);
 	wlr_texture_destroy(scene_tex);
