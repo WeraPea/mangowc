@@ -45,7 +45,7 @@ void createtablet(struct wlr_input_device *device) {
 					  &tablet_device_destroy);
 		if (libinput_device_config_send_events_get_modes(device_handle)) {
 			libinput_device_config_send_events_set_mode(device_handle,
-														send_events_mode);
+														config.send_events_mode);
 			wlr_cursor_attach_input_device(cursor, device);
 		}
 	} else if (device == tablet->wlr_device) {
@@ -135,7 +135,7 @@ void tablettoolmotion(struct wlr_tablet_v2_tablet_tool *tool, bool change_x,
 		sy = cursor->y - (l ? l->scene->node.y : w->geom.y);
 	}
 
-	if (sloppyfocus && c && c->scene->node.enabled &&
+	if (config.sloppyfocus && c && c->scene->node.enabled &&
 		(surface != seat->pointer_state.focused_surface ||
 		 (selmon && selmon->sel && c != selmon->sel)) &&
 		!client_is_unmanaged(c))
