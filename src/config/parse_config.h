@@ -200,6 +200,7 @@ typedef struct {
 	float zoom_max;
 	float zoom_speed;
 	int32_t zoom_centered;
+	int32_t zoom_single_monitor;
 	float fadein_begin_opacity;
 	float fadeout_begin_opacity;
 	uint32_t animation_duration_move;
@@ -1293,6 +1294,8 @@ bool parse_option(Config *config, char *key, char *value) {
 		config->zoom_speed = atof(value);
 	} else if (strcmp(key, "zoom_centered") == 0) {
 		config->zoom_centered = atof(value);
+	} else if (strcmp(key, "zoom_single_monitor") == 0) {
+		config->zoom_single_monitor = atof(value);
 	} else if (strcmp(key, "fadein_begin_opacity") == 0) {
 		config->fadein_begin_opacity = atof(value);
 	} else if (strcmp(key, "fadeout_begin_opacity") == 0) {
@@ -3157,6 +3160,7 @@ void override_config(void) {
 	config.zoom_max = CLAMP_FLOAT(config.zoom_max, 1.0f, 20.0f);
 	config.zoom_speed = CLAMP_FLOAT(config.zoom_speed, 0.01f, 5.0f);
 	config.zoom_centered = CLAMP_INT(config.zoom_centered, 0, 1);
+	config.zoom_single_monitor = CLAMP_INT(config.zoom_single_monitor, 0, 1);
 	config.fadein_begin_opacity =
 		CLAMP_FLOAT(config.fadein_begin_opacity, 0.0f, 1.0f);
 	config.fadeout_begin_opacity =
@@ -3312,6 +3316,7 @@ void set_value_default() {
 	config.zoom_max = 4.0f;
 	config.zoom_speed = 0.2f;
 	config.zoom_centered = 1;
+	config.zoom_single_monitor = 1;
 	config.fadein_begin_opacity = 0.5f;
 	config.fadeout_begin_opacity = 0.5f;
 	config.animation_duration_move = 500;
