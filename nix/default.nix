@@ -11,62 +11,66 @@
   wayland,
   wayland-protocols,
   wayland-scanner,
-  xcbutilwm,
+  libxcb-wm,
   xwayland,
-  enableXWayland ? true,
   meson,
   ninja,
   scenefx,
   wlroots_0_19,
   libGL,
-}: let
+  enableXWayland ? true,
+  debug ? false,
+}:
+stdenv.mkDerivation {
   pname = "mango";
-in
-  stdenv.mkDerivation {
-    inherit pname;
-    version = "nightly";
+  version = "nightly";
 
-    src = builtins.path {
-      path = ../.;
-      name = "source";
-    };
+  src = builtins.path {
+    path = ../.;
+    name = "source";
+  };
 
-    nativeBuildInputs = [
-      meson
-      ninja
-      pkg-config
-      wayland-scanner
+  mesonFlags = [
+    (lib.mesonEnable "xwayland" enableXWayland)
+    (lib.mesonBool "asan" debug)
+  ];
+
+  nativeBuildInputs = [
+    meson
+    ninja
+    pkg-config
+    wayland-scanner
+  ];
+
+  buildInputs =
+    [
+      libinput
+      libxcb
+      libxkbcommon
+      pcre2
+      pixman
+      wayland
+      wayland-protocols
+      wlroots_0_19
+      scenefx
+      libGL
+    ]
+    ++ lib.optionals enableXWayland [
+      libX11
+      libxcb-wm
+      xwayland
     ];
 
-    buildInputs =
-      [
-        libinput
-        libxcb
-        libxkbcommon
-        pcre2
-        pixman
-        wayland
-        wayland-protocols
-        wlroots_0_19
-        scenefx
-        libGL
-      ]
-      ++ lib.optionals enableXWayland [
-        libX11
-        xcbutilwm
-        xwayland
-      ];
+  passthru = {
+    providedSessions = ["mango"];
+  };
 
-    passthru = {
-      providedSessions = ["mango"];
-    };
-
-    meta = {
-      mainProgram = "mango";
-      description = "A streamlined but feature-rich Wayland compositor";
-      homepage = "https://github.com/DreamMaoMao/mango";
-      license = lib.licenses.gpl3Plus;
-      maintainers = [];
-      platforms = lib.platforms.unix;
-    };
-  }
+  meta = {
+    mainProgram = "mango";
+    description = "Practical and Powerful wayland compositor (dwm but wayland)";
+    homepage = "https://github.com/mangowm/mango";
+    license = lib.licenses.gpl3Plus;
+    maintainers = [];
+    platforms = lib.platforms.unix;
+  };
+}

@@ -13,7 +13,10 @@ static void handle_controller_set_hint(struct wl_listener *listener,
 									   void *data) {
 	struct tearing_controller *controller =
 		wl_container_of(listener, controller, set_hint);
-	Client *c = get_client_from_surface(controller->tearing_control->surface);
+	Client *c = NULL;
+
+	toplevel_from_wlr_surface(controller->tearing_control->surface, &c, NULL);
+
 	if (c) {
 		/*
 		 * tearing_control->current is actually an enum:
@@ -57,7 +60,7 @@ void handle_tearing_new_object(struct wl_listener *listener, void *data) {
 
 bool check_tearing_frame_allow(Monitor *m) {
 	/* never allow tearing when disabled */
-	if (!allow_tearing) {
+	if (!config.allow_tearing) {
 		return false;
 	}
 
@@ -69,7 +72,7 @@ bool check_tearing_frame_allow(Monitor *m) {
 	}
 
 	/* allow tearing for any window when requested or forced */
-	if (allow_tearing == TEARING_ENABLED) {
+	if (config.allow_tearing == TEARING_ENABLED) {
 		if (c->force_tearing == STATE_UNSPECIFIED) {
 			return c->tearing_hint;
 		} else {
@@ -84,7 +87,8 @@ bool check_tearing_frame_allow(Monitor *m) {
 
 	if (c->force_tearing == STATE_UNSPECIFIED) {
 		/* honor the tearing hint or the fullscreen-force preference */
-		return c->tearing_hint || allow_tearing == TEARING_FULLSCREEN_ONLY;
+		return c->tearing_hint ||
+			   config.allow_tearing == TEARING_FULLSCREEN_ONLY;
 	}
 
 	/* honor tearing as requested by action */
