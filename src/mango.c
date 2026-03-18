@@ -5049,7 +5049,7 @@ void rendermon(struct wl_listener *listener, void *data) {
 	screen_zoom_update(m);
 
 	// 只有在需要帧时才构建和提交状态
-	if (zoom_level > 1.0f) {
+	if (zoom_level > 1.0f && (!config.zoom_single_monitor || selmon == m)) {
 		render_zoomed(m);
 	} else if (config.allow_tearing && frame_allow_tearing) {
 		apply_tear_state(m);
