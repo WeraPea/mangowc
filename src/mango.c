@@ -706,6 +706,7 @@ static void touchdown(struct wl_listener *listener, void *data);
 static void touchup(struct wl_listener *listener, void *data);
 static void touchframe(struct wl_listener *listener, void *data);
 static void touchmotion(struct wl_listener *listener, void *data);
+static void touchcancel(struct wl_listener *listener, void *data);
 
 static void unlocksession(struct wl_listener *listener, void *data);
 static void unmaplayersurfacenotify(struct wl_listener *listener, void *data);
@@ -1035,6 +1036,7 @@ static struct wl_listener touch_down = {.notify = touchdown};
 static struct wl_listener touch_frame = {.notify = touchframe};
 static struct wl_listener touch_motion = {.notify = touchmotion};
 static struct wl_listener touch_up = {.notify = touchup};
+static struct wl_listener touch_cancel = {.notify = touchcancel};
 static struct wl_listener new_session_lock = {.notify = locksession};
 static struct wl_listener drm_lease_request = {.notify = requestdrmlease};
 static struct wl_listener keyboard_shortcuts_inhibit_new_inhibitor = {
@@ -2350,6 +2352,7 @@ void cleanuplisteners(void) {
 	wl_list_remove(&touch_frame.link);
 	wl_list_remove(&touch_motion.link);
 	wl_list_remove(&touch_up.link);
+	wl_list_remove(&touch_cancel.link);
 	wl_list_remove(&new_session_lock.link);
 	wl_list_remove(&tearing_new_object.link);
 	wl_list_remove(&keyboard_shortcuts_inhibit_new_inhibitor.link);
@@ -6163,6 +6166,7 @@ void setup(void) {
 	wl_signal_add(&cursor->events.touch_frame, &touch_frame);
 	wl_signal_add(&cursor->events.touch_motion, &touch_motion);
 	wl_signal_add(&cursor->events.touch_up, &touch_up);
+	wl_signal_add(&cursor->events.touch_cancel, &touch_cancel);
 
 	// 这两句代码会造成obs窗口里的鼠标光标消失,不知道注释有什么影响
 	cursor_shape_mgr = wlr_cursor_shape_manager_v1_create(dpy, 1);
@@ -6429,6 +6433,43 @@ void touchmotion(struct wl_listener *listener, void *data) {
 										 event->touch_id);
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 	}
+}
+
+void touchcancel(struct wl_listener *listener, void *data) {
+	struct wlr_touch_cancel_event *event = data;
+	struct wlr_touch_point *p = NULL;
+	struct wl_client *client = NULL;
+	struct wlr_seat_client *seat_client = NULL;
+
+	if (emulating_pointer_from_touch) {
+		if (emulated_pointer_touch_id == event->touch_id) {
+			struct wlr_pointer_button_event button_event = {
+				.pointer = (struct wlr_pointer *)event->touch,
+				.time_msec = event->time_msec,
+				.button = BTN_LEFT,
+				.state = WL_POINTER_BUTTON_STATE_RELEASED};
+			buttonpress(listener, &button_event);
+
+			emulating_pointer_from_touch = false;
+		}
+		return;
+	}
+
+	p = wlr_seat_touch_get_point(seat, event->touch_id);
+
+	if (!p) {
+		return;
+	}
+
+	if (p->surface) {
+		client = wl_resource_get_client(p->surface->resource);
+		seat_client = wlr_seat_client_for_wl_client(seat, client);
+		if (seat_client != NULL) {
+			wlr_seat_touch_notify_cancel(seat, seat_client);
+		}
+	}
+
+	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 }
 
 void tag_client(const Arg *arg, Client *target_client) {
