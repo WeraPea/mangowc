@@ -5420,6 +5420,8 @@ run(char *startup_cmd) {
 
 	/* At this point the outputs are initialized, choose initial selmon
 	 * based on cursor position, and set default cursor image */
+	logical_cursor_x = cursor->x;
+	logical_cursor_y = cursor->y;
 	selmon = xytomon(logical_cursor_x, logical_cursor_y);
 
 	/* TODO hack to get cursor to display in its initial location (100, 100)
