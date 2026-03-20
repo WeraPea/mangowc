@@ -3776,7 +3776,7 @@ void inputdevice(struct wl_listener *listener, void *data) {
 		createtablet(device);
 		break;
 	case WLR_INPUT_DEVICE_TABLET_PAD:
-		tablet_pad = wlr_tablet_pad_create(tablet_mgr, seat, device);
+		createtabletpad(device);
 		break;
 	case WLR_INPUT_DEVICE_POINTER:
 		createpointer(wlr_pointer_from_input_device(device));
@@ -6159,6 +6159,8 @@ void setup(void) {
 	 * to let us know when new input devices are available on the backend.
 	 */
 	wl_list_init(&inputdevices);
+	wl_list_init(&tablets);
+	wl_list_init(&tablet_pads);
 	wl_list_init(&keyboard_shortcut_inhibitors);
 	wl_signal_add(&backend->events.new_input, &new_input_device);
 	virtual_keyboard_mgr = wlr_virtual_keyboard_manager_v1_create(dpy);
