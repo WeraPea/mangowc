@@ -3752,7 +3752,7 @@ void reapply_monitor_rules(void) {
 
 		wlr_output_state_init(&state);
 
-		for (ji = 0; ji < config.monitor_rules_count; ji++) {
+		for (ji = config.monitor_rules_count - 1; ji >= 0; ji--) {
 			if (config.monitor_rules_count < 1)
 				break;
 
