@@ -168,6 +168,7 @@ typedef struct {
 	float mfact;
 	int32_t nmaster;
 	int32_t no_render_border;
+	int32_t open_as_floating;
 	int32_t no_hide;
 } ConfigTagRule;
 
@@ -634,9 +635,14 @@ uint32_t parse_mod(const char *mod_str) {
 	// 分割处理每个部分
 	token = strtok_r(input_copy, "+", &saveptr);
 	while (token != NULL) {
-		// 去除空白
-		while (*token == ' ' || *token == '\t')
-			token++;
+		// 去除前后空白
+		trim_whitespace(token);
+
+		// 如果 token 变成空字符串则跳过
+		if (*token == '\0') {
+			token = strtok_r(NULL, "+", &saveptr);
+			continue;
+		}
 
 		if (strncmp(token, "code:", 5) == 0) {
 			// 处理 code: 形式
@@ -1196,6 +1202,8 @@ FuncType parse_func_name(char *func_name, Arg *arg, char *arg_value,
 	} else if (strcmp(func_name, "scroller_stack") == 0) {
 		func = scroller_stack;
 		(*arg).i = parse_direction(arg_value);
+	} else if (strcmp(func_name, "toggle_all_floating") == 0) {
+		func = toggle_all_floating;
 	} else {
 		return NULL;
 	}
@@ -1899,6 +1907,7 @@ bool parse_option(Config *config, char *key, char *value) {
 		rule->nmaster = 0;
 		rule->mfact = 0.0f;
 		rule->no_render_border = 0;
+		rule->open_as_floating = 0;
 		rule->no_hide = 0;
 
 		bool parse_error = false;
@@ -1927,6 +1936,8 @@ bool parse_option(Config *config, char *key, char *value) {
 					rule->monitor_serial = strdup(val);
 				} else if (strcmp(key, "no_render_border") == 0) {
 					rule->no_render_border = CLAMP_INT(atoi(val), 0, 1);
+				} else if (strcmp(key, "open_as_floating") == 0) {
+					rule->open_as_floating = CLAMP_INT(atoi(val), 0, 1);
 				} else if (strcmp(key, "no_hide") == 0) {
 					rule->no_hide = CLAMP_INT(atoi(val), 0, 1);
 				} else if (strcmp(key, "nmaster") == 0) {
@@ -3780,6 +3791,8 @@ void parse_tagrule(Monitor *m) {
 				m->pertag->mfacts[tr.id] = tr.mfact;
 			if (tr.no_render_border >= 0)
 				m->pertag->no_render_border[tr.id] = tr.no_render_border;
+			if (tr.open_as_floating >= 0)
+				m->pertag->open_as_floating[tr.id] = tr.open_as_floating;
 		}
 	}
 
