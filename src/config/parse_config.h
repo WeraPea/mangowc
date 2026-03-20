@@ -3363,7 +3363,7 @@ void set_value_default() {
 	config.scratchpad_cross_monitor = 0;
 	config.focus_cross_tag = 0;
 	config.axis_scroll_factor = 1.0;
-  config.tablet_rotation = 0;
+	config.tablet_rotation = 0;
 	config.view_current_to_back = 0;
 	config.single_scratchpad = 1;
 	config.xwayland_persistence = 1;
@@ -3644,7 +3644,7 @@ void reapply_monitor_rules(void) {
 
 		wlr_output_state_init(&state);
 
-		for (ji = 0; ji < config.monitor_rules_count; ji++) {
+		for (ji = config.monitor_rules_count - 1; ji >= 0; ji--) {
 			if (config.monitor_rules_count < 1)
 				break;
 
