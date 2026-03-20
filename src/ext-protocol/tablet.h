@@ -2,9 +2,6 @@
 #include <wlr/types/wlr_tablet_tool.h>
 #include <wlr/types/wlr_tablet_v2.h>
 
-static const int tabletmaptosurface =
-	0; /* map tablet input to surface(1) or monitor(0) */
-
 static void createtablet(struct wlr_input_device *device);
 static void destroytablet(struct wl_listener *listener, void *data);
 static void destroytabletsurfacenotify(struct wl_listener *listener,
@@ -123,8 +120,8 @@ void createtablet(struct wlr_input_device *device) {
 		wl_signal_add(&tablet->wlr_device->events.destroy,
 					  &tablet_device_destroy);
 		if (libinput_device_config_send_events_get_modes(device_handle)) {
-			libinput_device_config_send_events_set_mode(device_handle,
-														config.send_events_mode);
+			libinput_device_config_send_events_set_mode(
+				device_handle, config.send_events_mode);
 			wlr_cursor_attach_input_device(cursor, device);
 		}
 	} else if (device == tablet->wlr_device) {
@@ -150,32 +147,6 @@ void destroytablettool(struct wl_listener *listener, void *data) {
 	tablet_tool = NULL;
 }
 
-void tabletapplymap(double tablet_width, double tablet_height,
-					struct wlr_fbox box, double *x, double *y) {
-	if ((!box.x && !box.y && !box.width && !box.height) || !tablet_width ||
-		!tablet_height) {
-		return;
-	}
-
-	if (!box.width) {
-		box.width = tablet_width - box.x;
-	}
-	if (!box.height) {
-		box.height = tablet_height - box.y;
-	}
-
-	if (box.x + box.width <= tablet_width) {
-		const double max_x = 1;
-		double width_offset = max_x * box.x / tablet_width;
-		*x = (*x - width_offset) * tablet_width / box.width;
-	}
-	if (box.y + box.height <= tablet_height) {
-		const double max_y = 1;
-		double height_offset = max_y * box.y / tablet_height;
-		*y = (*y - height_offset) * tablet_height / box.height;
-	}
-}
-
 void tablettoolmotion(struct wlr_tablet_v2_tablet_tool *tool, bool change_x,
 					  bool change_y, double x, double y, double dx, double dy) {
 	struct wlr_surface *surface = NULL;
@@ -190,9 +161,6 @@ void tablettoolmotion(struct wlr_tablet_v2_tablet_tool *tool, bool change_x,
 		transform_tablet_event(config.tablet_rotation, &x, &y, &dx, &dy,
 							   &change_x, &change_y);
 	}
-
-	tabletapplymap(tablet->wlr_tablet->width_mm, tablet->wlr_tablet->height_mm,
-				   (struct wlr_fbox){0}, &x, &y);
 
 	// TODO: apply constraints
 	switch (tablet_tool->wlr_tool->type) {
@@ -297,7 +265,6 @@ void tablettoolaxis(struct wl_listener *listener, void *data) {
 		wlr_tablet_v2_tablet_tool_notify_distance(tablet_tool, event->distance);
 	if (event->updated_axes &
 		(WLR_TABLET_TOOL_AXIS_TILT_X | WLR_TABLET_TOOL_AXIS_TILT_Y)) {
-		printf("DEBUGGING: In axis event handling\n");
 		wlr_tablet_v2_tablet_tool_notify_tilt(tablet_tool, event->tilt_x,
 											  event->tilt_y);
 	}
