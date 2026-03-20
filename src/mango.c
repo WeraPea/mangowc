@@ -2309,8 +2309,10 @@ Client *find_closest_tiled_client(Client *c) {
 			return tc;
 		}
 
-		int32_t dx = tc->geom.x + (int32_t)(tc->geom.width / 2) - logical_cursor_x;
-		int32_t dy = tc->geom.y + (int32_t)(tc->geom.height / 2) - logical_cursor_y;
+		int32_t dx =
+			tc->geom.x + (int32_t)(tc->geom.width / 2) - logical_cursor_x;
+		int32_t dy =
+			tc->geom.y + (int32_t)(tc->geom.height / 2) - logical_cursor_y;
 		long dist = (long)dx * dx + (long)dy * dy;
 
 		if (dist < min_dist) {
@@ -4955,8 +4957,11 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
 		/* Update selmon (even while dragging a window) */
+		Monitor *oldmon = selmon;
 		if (config.sloppyfocus)
 			selmon = xytomon(logical_cursor_x, logical_cursor_y);
+		if (oldmon != selmon)
+			printstatus(IPC_WATCH_MONITOR);
 	}
 
 	/* Find the client under the pointer and send the event along. */
