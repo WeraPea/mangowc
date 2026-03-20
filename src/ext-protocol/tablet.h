@@ -11,6 +11,7 @@ static void tabletpadattach(struct wl_listener *listener, void *data);
 static void destroytabletsurfacenotify(struct wl_listener *listener,
 									   void *data);
 static void destroytablettool(struct wl_listener *listener, void *data);
+static void tablettoolsetcursor(struct wl_listener *listener, void *data);
 
 static void tablettoolproximity(struct wl_listener *listener, void *data);
 static void tablettoolaxis(struct wl_listener *listener, void *data);
@@ -110,6 +111,7 @@ struct TabletTool {
 	struct wlr_surface *curr_surface;
 	struct wl_listener destroy;
 	struct wl_listener surface_destroy;
+	struct wl_listener set_cursor;
 	double tilt_x, tilt_y;
 };
 
@@ -287,9 +289,27 @@ void destroytablettool(struct wl_listener *listener, void *data) {
 
 	if (tool->curr_surface)
 		wl_list_remove(&tool->surface_destroy.link);
-
+	wl_list_remove(&tool->set_cursor.link);
 	wl_list_remove(&listener->link);
 	free(tool);
+}
+
+static void tablettoolsetcursor(struct wl_listener *listener, void *data) {
+	struct TabletTool *tool = wl_container_of(listener, tool, set_cursor);
+	struct wlr_tablet_v2_event_cursor *event = data;
+
+	struct wlr_seat_client *focused_client = NULL;
+	if (tool->tool_v2->focused_surface) {
+		focused_client = wlr_seat_client_for_wl_client(
+			seat,
+			wl_resource_get_client(tool->tool_v2->focused_surface->resource));
+	}
+
+	if (focused_client != event->seat_client)
+		return;
+
+	wlr_cursor_set_surface(cursor, event->surface, event->hotspot_x,
+						   event->hotspot_y);
 }
 
 void tablettoolmotion(struct TabletTool *tool, bool change_x, bool change_y,
@@ -392,10 +412,11 @@ void tablettoolproximity(struct wl_listener *listener, void *data) {
 		tool->tool_v2 = wlr_tablet_tool_create(tablet_mgr, seat, wlr_tool);
 		tool->surface_destroy.notify = destroytabletsurfacenotify;
 		tool->destroy.notify = destroytablettool;
+		tool->set_cursor.notify = tablettoolsetcursor;
 		tool->tablet = event->tablet->data;
 		wlr_tool->data = tool;
 		wl_signal_add(&tool->tool_v2->wlr_tool->events.destroy, &tool->destroy);
-		wl_signal_add(&tool->tool_v2->events.set_cursor, &request_cursor);
+		wl_signal_add(&tool->tool_v2->events.set_cursor, &tool->set_cursor);
 	}
 
 	switch (event->state) {
