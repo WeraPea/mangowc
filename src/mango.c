@@ -4,6 +4,7 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "wlr/util/box.h"
 #include "wlr/util/edges.h"
+#include <GLES2/gl2.h>
 #include <getopt.h>
 #include <libinput.h>
 #include <limits.h>
@@ -521,6 +522,9 @@ struct Monitor {
 	struct wlr_scene_output *scene_output;
 	struct wlr_output_state pending;
 	struct wlr_swapchain *zoom_swapchain;
+	struct wlr_swapchain *dither_swapchain;
+	GLuint dither_scratch_tex;
+	int dither_scratch_w, dither_scratch_h;
 	struct wl_listener frame;
 	struct wl_listener destroy;
 	struct wl_listener request_state;
@@ -994,6 +998,7 @@ struct Pertag {
 };
 
 #include "config/parse_config.h"
+#include "dither.h"
 
 static struct wl_signal mango_print_status;
 
@@ -2360,6 +2365,8 @@ void cleanup(void) {
 
 	dwl_im_relay_finish(dwl_input_method_relay);
 
+	dither_finish();
+
 	/* If it's not destroyed manually it will cause a use-after-free of
 	 * wlr_seat. Destroy it until it's fixed in the wlroots side */
 	wlr_backend_destroy(backend);
@@ -2393,6 +2400,8 @@ void cleanupmon(struct wl_listener *listener, void *data) {
 	if (m->lock_surface)
 		destroylocksurface(&m->destroy_lock_surface, NULL);
 	m->wlr_output->data = NULL;
+	wlr_swapchain_destroy(m->dither_swapchain);
+	glDeleteTextures(1, &m->dither_scratch_tex);
 	wlr_output_layout_remove(output_layout, m->wlr_output);
 	wlr_scene_output_destroy(m->scene_output);
 
@@ -4526,7 +4535,7 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 		if (config.sloppyfocus)
 			selmon = xytomon(logical_cursor_x, logical_cursor_y);
 		if (oldmon != selmon)
-      printstatus();
+			printstatus();
 	}
 
 	/* Find the client under the pointer and send the event along. */
@@ -5178,6 +5187,8 @@ void rendermon(struct wl_listener *listener, void *data) {
 	// 只有在需要帧时才构建和提交状态
 	if (zoom_level > 1.0f && (!config.zoom_single_monitor || selmon == m)) {
 		render_zoomed(m);
+	} else if (config.dither) {
+		render_dithered(m);
 	} else if (config.allow_tearing && frame_allow_tearing) {
 		apply_tear_state(m);
 	} else {
