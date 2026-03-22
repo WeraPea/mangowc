@@ -578,6 +578,11 @@ typedef struct {
 	struct wl_listener destroy;
 } SessionLock;
 
+struct cursor_state {
+	struct wlr_output_cursor *cursor;
+	bool enabled;
+};
+
 /* function declarations */
 static void applybounds(
 	Client *c,
@@ -830,7 +835,11 @@ static void cursor_warp_closest(struct wlr_cursor *cur,
 								struct wlr_input_device *dev, double lx,
 								double ly);
 static void screen_zoom_update(Monitor *m);
-static void render_zoomed(Monitor *m);
+static struct cursor_state *disable_cursors(struct wlr_output *output);
+static void enable_cursors(struct wlr_output *output,
+						   struct cursor_state *saved_cursors);
+static void render_zoomed(Monitor *m, struct wlr_buffer *input_buffer,
+						  struct cursor_state *saved_cursors);
 static Client *find_client_by_direction(Client *tc, const Arg *arg,
 										bool findfloating, bool ignore_align);
 static void exit_scroller_stack(Client *c);
@@ -4959,59 +4968,79 @@ static void screen_zoom_update(Monitor *m) {
 	}
 }
 
-static void render_zoomed(Monitor *m) {
+static struct cursor_state *disable_cursors(struct wlr_output *output) {
+	/* hack to have cursor overlayed on top of zoomed view when software cursors
+	 * are used or screen is being recorded
+	 * BUG: until cursor is updated, old cursor image still renders */
+	struct wlr_output_cursor *output_cursor;
+	int i = 0;
+	int n = wl_list_length(&output->cursors);
+	struct cursor_state *saved_cursors =
+		malloc(n * sizeof(struct cursor_state));
+
+	wl_list_for_each(output_cursor, &output->cursors, link) {
+		saved_cursors[i].cursor = output_cursor;
+		saved_cursors[i].enabled = output_cursor->enabled;
+		output_cursor->enabled = false;
+		i++;
+	}
+	return saved_cursors;
+}
+
+static void enable_cursors(struct wlr_output *output,
+						   struct cursor_state *saved_cursors) {
+	int i = 0;
+	int n = wl_list_length(&output->cursors);
+	for (i = 0; i < n; i++) {
+		saved_cursors[i].cursor->enabled = saved_cursors[i].enabled;
+	}
+	free(saved_cursors);
+}
+
+static void render_zoomed(Monitor *m, struct wlr_buffer *input_buffer,
+						  struct cursor_state *saved_cursors) {
 	struct wlr_output *output = m->wlr_output;
 	pixman_region32_t damage;
+	struct wlr_output_cursor *output_cursor;
 	int32_t width = output->width;
 	int32_t height = output->height;
 	double vx, vy, vw, vh;
-
-	/* Build normal scene state */
+	bool render_cursors = false;
 	struct wlr_output_state state = {0};
+	struct wlr_texture *scene_tex = NULL;
+	struct wlr_buffer *zoom_buf = NULL;
+	struct wlr_render_pass *pass = NULL;
+
 	wlr_output_state_init(&state);
 
-	/* hack to have cursor overlayed on top of zoomed view when software cursors
-	 * are used or screen is being recorded
-	 * disable cursors
-	 * BUG: until cursor is updated, old cursor image still renders in case of
-	 * software cursors */
-	struct wlr_output_cursor *output_cursor;
-	struct cursor_state {
-		struct wlr_output_cursor *cursor;
-		bool enabled;
-	};
-	int n = 0;
-	int i = 0;
-	struct cursor_state *saved = NULL;
+	/* Create texture from the scene buffer or input_buffer */
+	if (input_buffer) {
+		scene_tex = wlr_texture_from_buffer(drw, input_buffer);
+	} else {
+		if (saved_cursors == NULL && output->software_cursor_locks)
+			saved_cursors = disable_cursors(m->wlr_output);
 
-	if (output->software_cursor_locks) {
-		n = wl_list_length(&output->cursors);
-		saved = malloc(n * sizeof(struct cursor_state));
-		wl_list_for_each(output_cursor, &output->cursors, link) {
-			saved[i].cursor = output_cursor;
-			saved[i].enabled = output_cursor->enabled;
-			output_cursor->enabled = false;
-			i++;
+		/* Build normal scene state */
+		if (!wlr_scene_output_build_state(m->scene_output, &state, NULL)) {
+			wlr_log(WLR_ERROR, "[%s:%d] Failed to build zoom scene state",
+					__FILE__, __LINE__);
+			if (saved_cursors)
+				enable_cursors(m->wlr_output, saved_cursors);
+			goto cleanup;
 		}
+
+		scene_tex = wlr_texture_from_buffer(drw, state.buffer);
 	}
 
-	if (!wlr_scene_output_build_state(m->scene_output, &state, NULL)) {
-		wlr_log(WLR_ERROR, "[%s:%d] Failed to build zoom scene state", __FILE__,
+	if (!scene_tex) {
+		wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom texture", __FILE__,
 				__LINE__);
-		wlr_output_state_finish(&state);
-		if (output->software_cursor_locks) {
-			for (i = 0; i < n; i++) {
-				saved[i].cursor->enabled = saved[i].enabled;
-			}
-			free(saved);
-		}
-		return;
+		goto cleanup;
 	}
-	if (output->software_cursor_locks) {
-		for (i = 0; i < n; i++) {
-			saved[i].cursor->enabled = saved[i].enabled;
-		}
-		free(saved);
+
+	if (saved_cursors) {
+		render_cursors = true;
+		enable_cursors(m->wlr_output, saved_cursors);
 	}
 
 	/* Ensure zoom swapchain exists and matches output size */
@@ -5023,9 +5052,7 @@ static void render_zoomed(Monitor *m) {
 		if (!output->swapchain) {
 			wlr_log(WLR_ERROR, "[%s:%d] Output %s has no swapchain", __FILE__,
 					__LINE__, output->name);
-			wlr_output_commit_state(output, &state);
-			wlr_output_state_finish(&state);
-			return;
+			goto cleanup;
 		}
 
 		/* Copy format from output's swapchain */
@@ -5037,42 +5064,21 @@ static void render_zoomed(Monitor *m) {
 		if (!m->zoom_swapchain) {
 			wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom swapchain for %s",
 					__FILE__, __LINE__, output->name);
-			wlr_output_commit_state(output, &state);
-			wlr_output_state_finish(&state);
-			return;
+			goto cleanup;
 		}
 	}
 
 	/* Acquire zoom buffer */
-	struct wlr_buffer *zoom_buf = wlr_swapchain_acquire(m->zoom_swapchain);
-	if (!zoom_buf) {
-		wlr_output_commit_state(output, &state);
-		wlr_output_state_finish(&state);
-		return;
-	}
-
-	/* Create texture from the scene buffer */
-	struct wlr_texture *scene_tex = wlr_texture_from_buffer(drw, state.buffer);
-	if (!scene_tex) {
-		wlr_log(WLR_ERROR, "[%s:%d] Failed to create zoom texture", __FILE__,
-				__LINE__);
-		wlr_buffer_unlock(zoom_buf);
-		wlr_output_commit_state(output, &state);
-		wlr_output_state_finish(&state);
-		return;
-	}
+	zoom_buf = wlr_swapchain_acquire(m->zoom_swapchain);
+	if (!zoom_buf)
+		goto cleanup;
 
 	/* Begin render pass on zoom buffer */
-	struct wlr_render_pass *pass =
-		wlr_renderer_begin_buffer_pass(drw, zoom_buf, NULL);
+	pass = wlr_renderer_begin_buffer_pass(drw, zoom_buf, NULL);
 	if (!pass) {
 		wlr_log(WLR_ERROR, "[%s:%d] Failed to begin zoom render pass", __FILE__,
 				__LINE__);
-		wlr_texture_destroy(scene_tex);
-		wlr_buffer_unlock(zoom_buf);
-		wlr_output_commit_state(output, &state);
-		wlr_output_state_finish(&state);
-		return;
+		goto cleanup;
 	}
 
 	get_zoom_viewport(m, &vx, &vy, &vw, &vh);
@@ -5094,7 +5100,7 @@ static void render_zoomed(Monitor *m) {
 								});
 
 	/* draw the cursor on top */
-	if (output->software_cursor_locks) {
+	if (render_cursors) {
 		wl_list_for_each(output_cursor, &output->cursors, link) {
 			if (!output_cursor->enabled)
 				continue;
@@ -5116,6 +5122,8 @@ static void render_zoomed(Monitor *m) {
 
 	wlr_render_pass_submit(pass);
 	wlr_texture_destroy(scene_tex);
+	if (input_buffer)
+		wlr_buffer_unlock(input_buffer);
 
 	/* Replace buffer in output state with zoomed buffer */
 	wlr_output_state_set_buffer(&state, zoom_buf);
@@ -5128,6 +5136,19 @@ static void render_zoomed(Monitor *m) {
 
 	/* Commit the zoomed state */
 	wlr_output_commit_state(output, &state);
+	wlr_output_state_finish(&state);
+	return;
+
+cleanup:
+	if (input_buffer) {
+		wlr_output_state_set_buffer(&state, input_buffer);
+		wlr_buffer_unlock(input_buffer);
+	}
+	wlr_output_commit_state(output, &state);
+	if (scene_tex)
+		wlr_texture_destroy(scene_tex);
+	if (zoom_buf)
+		wlr_buffer_unlock(zoom_buf);
 	wlr_output_state_finish(&state);
 }
 
@@ -5217,10 +5238,25 @@ void rendermon(struct wl_listener *listener, void *data) {
 	screen_zoom_update(m);
 
 	// 只有在需要帧时才构建和提交状态
-	if (zoom_level > 1.0f && (!config.zoom_single_monitor || selmon == m)) {
-		render_zoomed(m);
+	bool render_zoom =
+		zoom_level > 1.0f && (!config.zoom_single_monitor || selmon == m);
+	if (render_zoom && config.dither) {
+		struct cursor_state *saved_cursors = NULL;
+		if (m->wlr_output->software_cursor_locks) {
+			saved_cursors = disable_cursors(m->wlr_output);
+		}
+		struct wlr_buffer *dithered = render_dithered(m, true, true);
+		if (dithered) {
+			render_zoomed(m, dithered, saved_cursors);
+		} else {
+			if (saved_cursors)
+				enable_cursors(m->wlr_output, saved_cursors);
+			wlr_scene_output_commit(m->scene_output, NULL);
+		}
+	} else if (render_zoom) {
+		render_zoomed(m, NULL, NULL);
 	} else if (config.dither) {
-		render_dithered(m);
+		render_dithered(m, false, false);
 	} else if (config.allow_tearing && frame_allow_tearing) {
 		apply_tear_state(m);
 	} else {

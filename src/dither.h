@@ -252,13 +252,14 @@ static void dither_finish(void) {
 	dither_gl = (typeof(dither_gl)){.current_mode = -1};
 }
 
-static void render_dithered(Monitor *m) {
+struct wlr_buffer *render_dithered(Monitor *m, bool return_buffer,
+								   bool always_render) {
 	struct wlr_output *output = m->wlr_output;
 	int32_t width = output->width;
 	int32_t height = output->height;
 
-	if (!wlr_scene_output_needs_frame(m->scene_output)) {
-		return;
+	if (!always_render && !wlr_scene_output_needs_frame(m->scene_output)) {
+		return NULL;
 	}
 
 	struct wlr_output_state state = {0};
@@ -385,15 +386,22 @@ static void render_dithered(Monitor *m) {
 	wlr_render_pass_submit(dpass);
 	wlr_buffer_unlock(src_buf);
 
+	if (return_buffer) {
+		wlr_output_state_finish(&state);
+		return dither_buf;
+	}
+
 	wlr_output_state_set_buffer(&state, dither_buf);
 	wlr_buffer_unlock(dither_buf);
 	wlr_output_commit_state(output, &state);
 	wlr_output_state_finish(&state);
-	return;
+	return NULL;
 
 fallback_src_locked:
 	wlr_buffer_unlock(src_buf);
 fallback:
 	wlr_output_state_finish(&state);
-	wlr_scene_output_commit(m->scene_output, NULL);
+	if (!return_buffer)
+		wlr_scene_output_commit(m->scene_output, NULL);
+	return NULL;
 }
