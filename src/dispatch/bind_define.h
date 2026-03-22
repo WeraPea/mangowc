@@ -2001,3 +2001,8 @@ int32_t screen_zoom_move(const Arg *arg) {
 	wlr_cursor_set_xcursor(cursor, cursor_mgr, "grab");
 	return 0;
 }
+
+int32_t toggle_dither(const Arg *arg) {
+	config.dither ^= 1;
+	return 0;
+}
