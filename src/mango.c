@@ -4935,6 +4935,7 @@ static void screen_zoom_update(Monitor *m) {
 
 static void render_zoomed(Monitor *m) {
 	struct wlr_output *output = m->wlr_output;
+	pixman_region32_t damage;
 	int32_t width = output->width;
 	int32_t height = output->height;
 	double vx, vy, vw, vh;
@@ -5093,6 +5094,11 @@ static void render_zoomed(Monitor *m) {
 	/* Replace buffer in output state with zoomed buffer */
 	wlr_output_state_set_buffer(&state, zoom_buf);
 	wlr_buffer_unlock(zoom_buf);
+
+	/* damage whole screen */
+	pixman_region32_init_rect(&damage, 0, 0, width, height);
+	wlr_output_state_set_damage(&state, &damage);
+	pixman_region32_fini(&damage);
 
 	/* Commit the zoomed state */
 	wlr_output_commit_state(output, &state);

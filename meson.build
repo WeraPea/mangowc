@@ -40,6 +40,7 @@ libwayland_client_dep = dependency('wayland-client')
 pcre2_dep = dependency('libpcre2-8')
 libscenefx_dep = dependency('scenefx-0.4',version: '>=0.4.1')
 glesv2_dep = dependency('glesv2')
+pixman = dependency('pixman-1')
 
 # 获取版本信息
 git = find_program('git', required : false)
@@ -111,6 +112,7 @@ executable('mango',
     libwayland_client_dep,
     pcre2_dep,
     glesv2_dep,
+    pixman,
   ],
   install : true,
   c_args : c_args,
