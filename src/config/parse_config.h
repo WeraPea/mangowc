@@ -1226,6 +1226,8 @@ FuncType parse_func_name(char *func_name, Arg *arg, char *arg_value,
 		(*arg).f = atof(arg_value);
 	} else if (strcmp(func_name, "screen_zoom_move") == 0) {
 		func = screen_zoom_move;
+	} else if (strcmp(func_name, "toggle_dither") == 0) {
+		func = toggle_dither;
 	} else {
 		return NULL;
 	}
