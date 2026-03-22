@@ -39,6 +39,7 @@ libscenefx_dep = dependency('scenefx-0.5',version: '>=0.5.0')
 pixman_dep = dependency('pixman-1')
 cjson_dep = dependency('libcjson')
 pangocairo_dep = dependency('pangocairo')
+pixman = dependency('pixman-1')
 
 # version info
 git = find_program('git', required : false)
@@ -114,6 +115,7 @@ executable('mango',
     pixman_dep,
     cjson_dep,
     pangocairo_dep,
+    pixman,
   ],
   install : true,
   c_args : c_args,
@@ -124,7 +126,7 @@ executable('mango',
 
 wayland_scanner_client_header = generator(
   wayland_scanner,
-  output: '@BASENAME@-protocol.h', 
+  output: '@BASENAME@-protocol.h',
   arguments: ['client-header', '@INPUT@', '@OUTPUT@']
 )
 
