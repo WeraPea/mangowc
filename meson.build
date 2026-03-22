@@ -39,7 +39,7 @@ libinput_dep = dependency('libinput',version: '>=1.27.1')
 libwayland_client_dep = dependency('wayland-client')
 pcre2_dep = dependency('libpcre2-8')
 libscenefx_dep = dependency('scenefx-0.4',version: '>=0.4.1')
-
+pixman = dependency('pixman-1')
 
 # 获取版本信息
 git = find_program('git', required : false)
@@ -110,6 +110,7 @@ executable('mango',
     libinput_dep,
     libwayland_client_dep,
     pcre2_dep,
+    pixman,
   ],
   install : true,
   c_args : c_args,
@@ -121,7 +122,7 @@ dwl_ipc_protocol = 'protocols/dwl-ipc-unstable-v2.xml'
 
 wayland_scanner_client_header = generator(
   wayland_scanner,
-  output: '@BASENAME@-protocol.h', 
+  output: '@BASENAME@-protocol.h',
   arguments: ['client-header', '@INPUT@', '@OUTPUT@']
 )
 
