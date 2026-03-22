@@ -951,8 +951,9 @@ struct Pertag {
 	uint32_t curtag, prevtag;			/* current and previous tag */
 	int32_t nmasters[LENGTH(tags) + 1]; /* number of windows in master area */
 	float mfacts[LENGTH(tags) + 1];		/* mfacts per tag */
-	bool no_hide[LENGTH(tags) + 1];		/* no_hide per tag */
-	bool no_render_border[LENGTH(tags) + 1]; /* no_render_border per tag */
+	int32_t no_hide[LENGTH(tags) + 1];	/* no_hide per tag */
+	int32_t no_render_border[LENGTH(tags) + 1]; /* no_render_border per tag */
+	int32_t open_as_floating[LENGTH(tags) + 1]; /* open_as_floating per tag */
 	const Layout
 		*ltidxs[LENGTH(tags) + 1]; /* matrix of tags and layouts indexes  */
 };
@@ -1425,6 +1426,25 @@ void set_float_malposition(Client *tc) {
 	tc->float_geom.y = tc->geom.y = y;
 }
 
+void client_reset_mon_tags(Client *c, Monitor *mon, uint32_t newtags) {
+	if (!newtags && mon && !mon->isoverview) {
+		c->tags = mon->tagset[mon->seltags];
+	} else if (!newtags && mon && mon->isoverview) {
+		c->tags = mon->ovbk_current_tagset;
+	} else if (newtags) {
+		c->tags = newtags;
+	} else {
+		c->tags = mon->tagset[mon->seltags];
+	}
+}
+
+void check_match_tag_floating_rule(Client *c, Monitor *mon) {
+	if (c->tags && !c->isfloating && mon && !c->swallowedby &&
+		mon->pertag->open_as_floating[get_tags_first_tag_num(c->tags)]) {
+		c->isfloating = 1;
+	}
+}
+
 void applyrules(Client *c) {
 	/* rule matching */
 	const char *appid, *title;
@@ -1549,12 +1569,18 @@ void applyrules(Client *c) {
 
 	int32_t fullscreen_state_backup =
 		c->isfullscreen || client_wants_fullscreen(c);
+
 	setmon(c, mon, newtags,
 		   !c->isopensilent &&
 			   !(client_is_x11_popup(c) && client_should_ignore_focus(c)) &&
 			   mon &&
 			   (!c->istagsilent || !newtags ||
 				newtags & mon->tagset[mon->seltags]));
+
+	if (!c->isfloating) {
+		c->old_stack_inner_per = c->stack_inner_per;
+		c->old_master_inner_per = c->master_inner_per;
+	}
 
 	if (c->mon &&
 		!(c->mon == selmon && c->tags & c->mon->tagset[c->mon->seltags]) &&
@@ -4087,9 +4113,9 @@ void init_client_properties(Client *c) {
 	c->master_mfact_per = 0.0f;
 	c->master_inner_per = 0.0f;
 	c->stack_inner_per = 0.0f;
-	c->old_stack_inner_per = 1.0f;
-	c->old_master_inner_per = 1.0f;
-	c->old_master_mfact_per = 1.0f;
+	c->old_stack_inner_per = 0.0f;
+	c->old_master_inner_per = 0.0f;
+	c->old_master_mfact_per = 0.0f;
 	c->isterm = 0;
 	c->allow_csd = 0;
 	c->force_maximize = 0;
@@ -5062,12 +5088,12 @@ setfloating(Client *c, int32_t floating) {
 
 	if (floating == 1 && c != grabc) {
 
-		if (c->isfullscreen || c->ismaximizescreen) {
-			c->isfullscreen = 0; // 清除窗口全屏标志
-			c->ismaximizescreen = 0;
-			c->bw = c->isnoborder ? 0 : config.borderpx;
+		if (c->isfullscreen) {
+			c->isfullscreen = 0;
+			client_set_fullscreen(c, 0);
 		}
 
+		c->ismaximizescreen = 0;
 		exit_scroller_stack(c);
 
 		// 重新计算居中的坐标
@@ -5109,7 +5135,8 @@ setfloating(Client *c, int32_t floating) {
 		// 让当前tag中的全屏窗口退出全屏参与平铺
 		wl_list_for_each(fc, &clients,
 						 link) if (fc && fc != c && VISIBLEON(fc, c->mon) &&
-								   c->tags & fc->tags && ISFULLSCREEN(fc)) {
+								   c->tags & fc->tags && ISFULLSCREEN(fc) &&
+								   old_floating_state) {
 			clear_fullscreen_flag(fc);
 		}
 	}
@@ -5123,7 +5150,8 @@ setfloating(Client *c, int32_t floating) {
 								layers[c->isfloating ? LyrTop : LyrTile]);
 	}
 
-	if (!c->isfloating && old_floating_state) {
+	if (!c->isfloating && old_floating_state &&
+		(c->old_stack_inner_per > 0.0f || c->old_master_inner_per > 0.0f)) {
 		restore_size_per(c->mon, c);
 	}
 
@@ -5142,6 +5170,12 @@ setfloating(Client *c, int32_t floating) {
 	}
 
 	arrange(c->mon, false, false);
+
+	if (!c->isfloating) {
+		c->old_master_inner_per = c->master_inner_per;
+		c->old_stack_inner_per = c->stack_inner_per;
+	}
+
 	setborder_color(c);
 	printstatus();
 }
@@ -5188,13 +5222,12 @@ void setmaximizescreen(Client *c, int32_t maximizescreen) {
 
 	if (maximizescreen) {
 
-		if (c->isfullscreen)
-			setfullscreen(c, 0);
+		if (c->isfullscreen) {
+			c->isfullscreen = 0;
+			client_set_fullscreen(c, 0);
+		}
 
 		exit_scroller_stack(c);
-
-		if (c->isfloating)
-			c->float_geom = c->geom;
 
 		maximizescreen_box.x = c->mon->w.x + config.gappoh;
 		maximizescreen_box.y = c->mon->w.y + config.gappov;
@@ -5256,13 +5289,9 @@ void setfullscreen(Client *c, int32_t fullscreen) // 用自定义全屏代理自
 	client_set_fullscreen(c, fullscreen);
 
 	if (fullscreen) {
-		if (c->ismaximizescreen)
-			setmaximizescreen(c, 0);
 
+		c->ismaximizescreen = 0;
 		exit_scroller_stack(c);
-
-		if (c->isfloating)
-			c->float_geom = c->geom;
 
 		c->isfakefullscreen = 0;
 
@@ -5422,15 +5451,8 @@ void setmon(Client *c, Monitor *m, uint32_t newtags, bool focus) {
 		/* Make sure window actually overlaps with the monitor */
 		reset_foreign_tolevel(c);
 		resize(c, c->geom, 0);
-		if (!newtags && !m->isoverview) {
-			c->tags = m->tagset[m->seltags];
-		} else if (!newtags && m->isoverview) {
-			c->tags = m->ovbk_current_tagset;
-		} else if (newtags) {
-			c->tags = newtags;
-		} else {
-			c->tags = m->tagset[m->seltags];
-		}
+		client_reset_mon_tags(c, m, newtags);
+		check_match_tag_floating_rule(c, m);
 		setfloating(c, c->isfloating);
 		setfullscreen(c, c->isfullscreen); /* This will call arrange(c->mon) */
 	}
