@@ -282,6 +282,9 @@ typedef struct {
 
 	double axis_scroll_factor;
 
+	int32_t dither;
+	int32_t dither_mode;
+
 	int32_t blur;
 	int32_t blur_layer;
 	int32_t blur_optimized;
@@ -1677,6 +1680,10 @@ bool parse_option(Config *config, char *key, char *value) {
 		config->button_map = atoi(value);
 	} else if (strcmp(key, "axis_scroll_factor") == 0) {
 		config->axis_scroll_factor = atof(value);
+	} else if (strcmp(key, "dither") == 0) {
+		config->dither = CLAMP_INT(atoi(value), 0, 1);
+	} else if (strcmp(key, "dither_mode") == 0) {
+		config->dither_mode = CLAMP_INT(atoi(value), 0, 2);
 	} else if (strcmp(key, "gappih") == 0) {
 		config->gappih = atoi(value);
 	} else if (strcmp(key, "gappiv") == 0) {
@@ -3219,6 +3226,8 @@ void override_config(void) {
 	config.button_map = CLAMP_INT(config.button_map, 0, 1);
 	config.axis_scroll_factor =
 		CLAMP_FLOAT(config.axis_scroll_factor, 0.1f, 10.0f);
+	config.dither_mode = CLAMP_INT(config.dither_mode, 0, 2);
+	config.dither = CLAMP_INT(config.dither, 0, 1);
 	config.gappih = CLAMP_INT(config.gappih, 0, 1000);
 	config.gappiv = CLAMP_INT(config.gappiv, 0, 1000);
 	config.gappoh = CLAMP_INT(config.gappoh, 0, 1000);
@@ -3311,6 +3320,8 @@ void set_value_default() {
 	config.scratchpad_cross_monitor = 0;
 	config.focus_cross_tag = 0;
 	config.axis_scroll_factor = 1.0;
+	config.dither_mode = 2;
+	config.dither = 0;
 	config.view_current_to_back = 0;
 	config.single_scratchpad = 1;
 	config.xwayland_persistence = 1;
