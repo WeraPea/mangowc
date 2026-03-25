@@ -460,9 +460,15 @@ typedef struct {
 	struct wl_listener destroy;
 } KeyboardGroup;
 
+typedef struct {
+	struct wl_list link;
+	int32_t touch_id;
+} TouchPoint;
+
 typedef struct TouchGroup {
 	struct wl_list link;
 	struct wlr_touch *touch;
+	struct wl_list touch_points;
 	Monitor *m;
 } TouchGroup;
 
@@ -928,7 +934,7 @@ static struct wlr_output_layout *output_layout;
 static struct wlr_box sgeom;
 static struct wl_list mons;
 static Monitor *selmon;
-static struct wl_list touches;
+static struct wl_list touch_groups;
 
 static bool emulating_pointer_from_touch = false;
 static int32_t emulated_pointer_touch_id;
@@ -3424,7 +3430,9 @@ void createtouch(struct wlr_touch *wlr_touch) {
 	TouchGroup *touch = ecalloc(1, sizeof(TouchGroup));
 
 	touch->touch = wlr_touch;
-	wl_list_insert(&touches, &touch->link);
+	wl_list_init(&touch->touch_points);
+	wl_list_insert(&touch_groups, &touch->link);
+	wlr_touch->data = touch;
 	wlr_cursor_attach_input_device(cursor, &wlr_touch->base);
 }
 
@@ -3818,7 +3826,7 @@ void inputdevice(struct wl_listener *listener, void *data) {
 	caps = WL_SEAT_CAPABILITY_POINTER;
 	if (!wl_list_empty(&kb_group->wlr_group->devices))
 		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
-	if (!wl_list_empty(&touches))
+	if (!wl_list_empty(&touch_groups))
 		caps |= WL_SEAT_CAPABILITY_TOUCH;
 	wlr_seat_set_capabilities(seat, caps);
 }
@@ -6253,7 +6261,7 @@ void setup(void) {
 	wl_signal_add(&cursor->events.tablet_tool_button, &tablet_tool_button);
 	wl_signal_add(&cursor->events.tablet_tool_tip, &tablet_tool_tip);
 
-	wl_list_init(&touches);
+	wl_list_init(&touch_groups);
 
 	wl_signal_add(&cursor->events.touch_down, &touch_down);
 	wl_signal_add(&cursor->events.touch_frame, &touch_frame);
@@ -6379,12 +6387,17 @@ void startdrag(struct wl_listener *listener, void *data) {
 
 void touchdown(struct wl_listener *listener, void *data) {
 	struct wlr_touch_down_event *event = data;
+	TouchGroup *tg = event->touch->data;
+	TouchPoint *t = ecalloc(1, sizeof(TouchPoint));
 	double lx, ly;
 	double sx, sy;
 	double dx, dy;
 	struct wlr_surface *surface;
 	Client *c = NULL;
 	Monitor *m;
+
+	t->touch_id = event->touch_id;
+	wl_list_insert(&tg->touch_points, &t->link);
 
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
@@ -6443,6 +6456,20 @@ void touchdown(struct wl_listener *listener, void *data) {
 
 void touchup(struct wl_listener *listener, void *data) {
 	struct wlr_touch_up_event *event = data;
+	TouchGroup *tg = event->touch->data;
+	TouchPoint *t = NULL;
+	TouchPoint *t_iter;
+
+	wl_list_for_each(t_iter, &tg->touch_points, link) {
+		if (t_iter->touch_id == event->touch_id) {
+			t = t_iter;
+			break;
+		}
+	}
+	if (!t) // invalid or cancelled
+		return;
+	wl_list_remove(&t->link);
+	free(t);
 
 	if (emulating_pointer_from_touch) {
 		if (emulated_pointer_touch_id == event->touch_id) {
@@ -6477,6 +6504,9 @@ void touchframe(struct wl_listener *listener, void *data) {
 
 void touchmotion(struct wl_listener *listener, void *data) {
 	struct wlr_touch_motion_event *event = data;
+	TouchGroup *tg = event->touch->data;
+	TouchPoint *t = NULL;
+	TouchPoint *t_iter;
 	double lx, ly;
 	double sx, sy;
 	double dx, dy;
@@ -6485,6 +6515,15 @@ void touchmotion(struct wl_listener *listener, void *data) {
 	Client *c = NULL;
 	struct wlr_scene_tree *tree;
 	struct wlr_touch_point *p = NULL;
+
+	wl_list_for_each(t_iter, &tg->touch_points, link) {
+		if (t_iter->touch_id == event->touch_id) {
+			t = t_iter;
+			break;
+		}
+	}
+	if (!t) // invalid or cancelled
+		return;
 
 	if (emulating_pointer_from_touch) {
 		if (emulated_pointer_touch_id == event->touch_id) {
@@ -6532,9 +6571,24 @@ void touchmotion(struct wl_listener *listener, void *data) {
 
 void touchcancel(struct wl_listener *listener, void *data) {
 	struct wlr_touch_cancel_event *event = data;
+	TouchGroup *tg = event->touch->data;
+	TouchPoint *t = NULL;
+	TouchPoint *t_iter;
 	struct wlr_touch_point *p = NULL;
 	struct wl_client *client = NULL;
 	struct wlr_seat_client *seat_client = NULL;
+
+	wl_list_for_each(t_iter, &tg->touch_points, link) {
+		if (t_iter->touch_id == event->touch_id) {
+			t = t_iter;
+			break;
+		}
+	}
+	if (!t)
+		return;
+
+	wl_list_remove(&t->link);
+	free(t);
 
 	if (emulating_pointer_from_touch) {
 		if (emulated_pointer_touch_id == event->touch_id) {
