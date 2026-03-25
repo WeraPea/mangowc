@@ -408,6 +408,7 @@ void tablettoolproximity(struct wl_listener *listener, void *data) {
 	struct wlr_tablet_tool_proximity_event *event = data;
 	struct wlr_tablet_tool *wlr_tool = event->tool;
 	struct TabletTool *tool = wlr_tool->data;
+	Monitor *m_iter;
 
 	if (!tool) {
 		tool = calloc(1, sizeof(struct TabletTool));
@@ -423,6 +424,18 @@ void tablettoolproximity(struct wl_listener *listener, void *data) {
 		wlr_tool->data = tool;
 		wl_signal_add(&tool->tool_v2->wlr_tool->events.destroy, &tool->destroy);
 		wl_signal_add(&tool->tool_v2->events.set_cursor, &tool->set_cursor);
+
+		if (config.tablet_map_to_mon) {
+			wl_list_for_each(m_iter, &mons, link) {
+				if (match_monitor_spec(config.tablet_map_to_mon, m_iter)) {
+					wlr_log(WLR_DEBUG, "Mapping tablet %s to output %s",
+							event->tablet->base.name, config.tablet_map_to_mon);
+					wlr_cursor_map_input_to_output(cursor, &event->tablet->base,
+												   m_iter->wlr_output);
+					break;
+				}
+			}
+		}
 	}
 
 	switch (event->state) {

@@ -307,6 +307,7 @@ typedef struct {
 	int32_t drag_lock;
 	uint32_t button_map;
 
+	char *tablet_map_to_mon;
 	int32_t tablet_rotation;
 
 	int32_t dither;
@@ -1757,6 +1758,10 @@ bool parse_option(Config *config, char *key, char *value) {
 		config->axis_scroll_factor = atof(value);
 	} else if (strcmp(key, "trackpad_scroll_factor") == 0) {
 		config->trackpad_scroll_factor = atof(value);
+	} else if (strcmp(key, "tablet_map_to_mon") == 0) {
+		if (config->tablet_map_to_mon)
+			free(config->tablet_map_to_mon);
+		config->tablet_map_to_mon = strdup(value);
 	} else if (strcmp(key, "tablet_rotation") == 0) {
 		config->tablet_rotation = CLAMP_INT(atoi(value), 0, 7);
 	} else if (strcmp(key, "dither") == 0) {
@@ -3214,6 +3219,11 @@ void free_config(void) {
 		config.cursor_theme = NULL;
 	}
 
+	if (config.tablet_map_to_mon) {
+		free(config.tablet_map_to_mon);
+		config.tablet_map_to_mon = NULL;
+	}
+
 	// 释放 circle_layout
 	free_circle_layout(&config);
 
@@ -3471,7 +3481,7 @@ void set_value_default() {
 	config.focus_cross_tag = 0;
 	config.axis_scroll_factor = 1.0;
 	config.trackpad_scroll_factor = 1.0;
-  config.tablet_rotation = 0;
+	config.tablet_rotation = 0;
 	config.dither_mode = 2;
 	config.dither = 0;
 	config.view_current_to_back = 0;
@@ -3692,6 +3702,7 @@ bool parse_config(void) {
 	config.tag_rules = NULL;
 	config.tag_rules_count = 0;
 	config.cursor_theme = NULL;
+	config.tablet_map_to_mon = NULL;
 	strcpy(config.keymode, "default");
 
 	create_config_keymap();
