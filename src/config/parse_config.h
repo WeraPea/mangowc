@@ -163,6 +163,15 @@ typedef struct {
 } GestureBinding;
 
 typedef struct {
+	uint32_t swipe;
+	uint32_t edge;
+	uint32_t distance;
+	uint32_t fingers_count;
+	int32_t (*func)(const Arg *);
+	Arg arg;
+} TouchGestureBinding;
+
+typedef struct {
 	int32_t id;
 	char *layout_name;
 	char *monitor_name;
@@ -296,6 +305,14 @@ typedef struct {
 	int32_t dither;
 	int32_t dither_mode;
 
+	double touch_distance_threshold;
+	double touch_degrees_leniency;
+	uint32_t touch_timeoutms;
+	double touch_edge_size_left;
+	double touch_edge_size_top;
+	double touch_edge_size_right;
+	double touch_edge_size_bottom;
+
 	int32_t blur;
 	int32_t blur_layer;
 	int32_t blur_optimized;
@@ -357,6 +374,9 @@ typedef struct {
 
 	GestureBinding *gesture_bindings;
 	int32_t gesture_bindings_count;
+
+	TouchGestureBinding *touch_gesture_bindings;
+	int32_t touch_gesture_bindings_count;
 
 	ConfigEnv **env;
 	int32_t env_count;
@@ -543,6 +563,92 @@ int32_t parse_direction(const char *str) {
 		return RIGHT;
 	} else {
 		return UNDIR;
+	}
+}
+
+int32_t parse_touch_direction(const char *str) {
+	char lowerStr[11];
+	int32_t i = 0;
+	while (str[i] && i < 10) {
+		lowerStr[i] = tolower(str[i]);
+		i++;
+	}
+	lowerStr[i] = '\0';
+
+	if (strcmp(lowerStr, "up") == 0) {
+		return TOUCH_SWIPE_UP;
+	} else if (strcmp(lowerStr, "down") == 0) {
+		return TOUCH_SWIPE_DOWN;
+	} else if (strcmp(lowerStr, "left") == 0) {
+		return TOUCH_SWIPE_LEFT;
+	} else if (strcmp(lowerStr, "right") == 0) {
+		return TOUCH_SWIPE_RIGHT;
+	} else if (strcmp(lowerStr, "up_left") == 0) {
+		return TOUCH_SWIPE_UP_LEFT;
+	} else if (strcmp(lowerStr, "up_right") == 0) {
+		return TOUCH_SWIPE_UP_RIGHT;
+	} else if (strcmp(lowerStr, "down_left") == 0) {
+		return TOUCH_SWIPE_DOWN_LEFT;
+	} else if (strcmp(lowerStr, "down_right") == 0) {
+		return TOUCH_SWIPE_DOWN_RIGHT;
+	} else {
+		return TOUCH_SWIPE_NONE;
+	}
+}
+
+int32_t parse_touch_edge(const char *str) {
+	char lowerStr[13];
+	int32_t i = 0;
+	while (str[i] && i < 12) {
+		lowerStr[i] = tolower(str[i]);
+		i++;
+	}
+	lowerStr[i] = '\0';
+
+	if (strcmp(lowerStr, "any") == 0) {
+		return EDGE_ANY;
+	} else if (strcmp(lowerStr, "none") == 0) {
+		return EDGE_NONE;
+	} else if (strcmp(lowerStr, "left") == 0) {
+		return EDGE_LEFT;
+	} else if (strcmp(lowerStr, "right") == 0) {
+		return EDGE_RIGHT;
+	} else if (strcmp(lowerStr, "top") == 0) {
+		return EDGE_TOP;
+	} else if (strcmp(lowerStr, "bottom") == 0) {
+		return EDGE_BOTTOM;
+	} else if (strcmp(lowerStr, "top_left") == 0) {
+		return CORNER_TOP_LEFT;
+	} else if (strcmp(lowerStr, "top_right") == 0) {
+		return CORNER_TOP_RIGHT;
+	} else if (strcmp(lowerStr, "bottom_left") == 0) {
+		return CORNER_BOTTOM_LEFT;
+	} else if (strcmp(lowerStr, "bottom_right") == 0) {
+		return CORNER_BOTTOM_RIGHT;
+	} else {
+		return EDGE_ANY;
+	}
+}
+
+int32_t parse_distance(const char *str) {
+	char lowerStr[7];
+	int32_t i = 0;
+	while (str[i] && i < 6) {
+		lowerStr[i] = tolower(str[i]);
+		i++;
+	}
+	lowerStr[i] = '\0';
+
+	if (strcmp(lowerStr, "any") == 0) {
+		return DISTANCE_ANY;
+	} else if (strcmp(lowerStr, "short") == 0) {
+		return DISTANCE_SHORT;
+	} else if (strcmp(lowerStr, "medium") == 0) {
+		return DISTANCE_MEDIUM;
+	} else if (strcmp(lowerStr, "long") == 0) {
+		return DISTANCE_LONG;
+	} else {
+		return DISTANCE_ANY;
 	}
 }
 
@@ -1720,6 +1826,20 @@ bool parse_option(Config *config, char *key, char *value) {
 		config->dither = CLAMP_INT(atoi(value), 0, 1);
 	} else if (strcmp(key, "dither_mode") == 0) {
 		config->dither_mode = CLAMP_INT(atoi(value), 0, 2);
+	} else if (strcmp(key, "touch_distance_threshold") == 0) {
+		config->touch_distance_threshold = atof(value);
+	} else if (strcmp(key, "touch_degrees_leniency") == 0) {
+		config->touch_degrees_leniency = atof(value);
+	} else if (strcmp(key, "touch_timeoutms") == 0) {
+		config->touch_timeoutms = atoi(value);
+	} else if (strcmp(key, "touch_edge_size_left") == 0) {
+		config->touch_edge_size_left = atof(value);
+	} else if (strcmp(key, "touch_edge_size_top") == 0) {
+		config->touch_edge_size_top = atof(value);
+	} else if (strcmp(key, "touch_edge_size_right") == 0) {
+		config->touch_edge_size_right = atof(value);
+	} else if (strcmp(key, "touch_edge_size_bottom") == 0) {
+		config->touch_edge_size_bottom = atof(value);
 	} else if (strcmp(key, "gappih") == 0) {
 		config->gappih = atoi(value);
 	} else if (strcmp(key, "gappiv") == 0) {
@@ -2754,6 +2874,91 @@ bool parse_option(Config *config, char *key, char *value) {
 			config->gesture_bindings_count++;
 		}
 
+	} else if (strncmp(key, "touchgesturebind", 16) == 0) {
+		config->touch_gesture_bindings =
+			realloc(config->touch_gesture_bindings,
+					(config->touch_gesture_bindings_count + 1) *
+						sizeof(TouchGestureBinding));
+		if (!config->touch_gesture_bindings) {
+			fprintf(stderr,
+					"\033[1m\033[31m[ERROR]:\033[33m Failed to allocate "
+					"memory for axis touchgesturebind\n");
+			return false;
+		}
+
+		TouchGestureBinding *binding =
+			&config
+				 ->touch_gesture_bindings[config->touch_gesture_bindings_count];
+		memset(binding, 0, sizeof(TouchGestureBinding));
+
+		char swipe_str[256], edge_str[256], distance_str[256],
+			fingers_count_str[256], func_name[256],
+			arg_value[256] = "0\0", arg_value2[256] = "0\0",
+			arg_value3[256] = "0\0", arg_value4[256] = "0\0",
+			arg_value5[256] = "0\0";
+		if (sscanf(value,
+				   "%255[^,],%255[^,],%255[^,],%255[^,],%255["
+				   "^,],%255[^,],%255[^,],%255[^,],%255[^,],%255[^\n]",
+				   swipe_str, edge_str, distance_str, fingers_count_str,
+				   func_name, arg_value, arg_value2, arg_value3, arg_value4,
+				   arg_value5) < 4) {
+			fprintf(stderr,
+					"\033[1m\033[31m[ERROR]:\033[33m Invalid touchgesturebind "
+					"format: %s\n",
+					value);
+			return false;
+		}
+
+		trim_whitespace(swipe_str);
+		trim_whitespace(edge_str);
+		trim_whitespace(distance_str);
+		trim_whitespace(fingers_count_str);
+		trim_whitespace(func_name);
+		trim_whitespace(arg_value);
+		trim_whitespace(arg_value2);
+		trim_whitespace(arg_value3);
+		trim_whitespace(arg_value4);
+		trim_whitespace(arg_value5);
+
+		binding->swipe = parse_touch_direction(swipe_str);
+		binding->edge = parse_touch_edge(edge_str);
+		binding->distance = parse_distance(distance_str);
+		binding->fingers_count = atoi(fingers_count_str);
+		binding->arg.i = 0;
+		binding->arg.i2 = 0;
+		binding->arg.f = 0.0f;
+		binding->arg.f2 = 0.0f;
+		binding->arg.ui = 0;
+		binding->arg.ui2 = 0;
+		binding->arg.v = NULL;
+		binding->arg.v2 = NULL;
+		binding->arg.v3 = NULL;
+		binding->func =
+			parse_func_name(func_name, &binding->arg, arg_value, arg_value2,
+							arg_value3, arg_value4, arg_value5);
+
+		if (!binding->func) {
+			if (binding->arg.v) {
+				free(binding->arg.v);
+				binding->arg.v = NULL;
+			}
+			if (binding->arg.v2) {
+				free(binding->arg.v2);
+				binding->arg.v2 = NULL;
+			}
+			if (binding->arg.v3) {
+				free(binding->arg.v3);
+				binding->arg.v3 = NULL;
+			}
+			fprintf(stderr,
+					"\033[1m\033[31m[ERROR]:\033[33m Unknown "
+					"dispatch in "
+					"touchgesturebind: \033[1m\033[31m%s\n",
+					func_name);
+			return false;
+		} else {
+			config->touch_gesture_bindings_count++;
+		}
 	} else if (strncmp(key, "source-optional", 15) == 0) {
 		parse_config_file(config, value, false);
 	} else if (strncmp(key, "source", 6) == 0) {
@@ -3050,6 +3255,27 @@ void free_config(void) {
 		config.gesture_bindings_count = 0;
 	}
 
+	// release touch_gesture_bindings
+	if (config.touch_gesture_bindings) {
+		for (i = 0; i < config.touch_gesture_bindings_count; i++) {
+			if (config.touch_gesture_bindings[i].arg.v) {
+				free((void *)config.touch_gesture_bindings[i].arg.v);
+				config.touch_gesture_bindings[i].arg.v = NULL;
+			}
+			if (config.touch_gesture_bindings[i].arg.v2) {
+				free((void *)config.touch_gesture_bindings[i].arg.v2);
+				config.touch_gesture_bindings[i].arg.v2 = NULL;
+			}
+			if (config.touch_gesture_bindings[i].arg.v3) {
+				free((void *)config.touch_gesture_bindings[i].arg.v3);
+				config.touch_gesture_bindings[i].arg.v3 = NULL;
+			}
+		}
+		free(config.touch_gesture_bindings);
+		config.touch_gesture_bindings = NULL;
+		config.touch_gesture_bindings_count = 0;
+	}
+
 	// 释放 tag_rules
 	if (config.tag_rules) {
 		for (int32_t i = 0; i < config.tag_rules_count; i++) {
@@ -3286,6 +3512,19 @@ void override_config(void) {
 	config.tablet_rotation = CLAMP_INT(config.tablet_rotation, 0, 7);
 	config.dither_mode = CLAMP_INT(config.dither_mode, 0, 2);
 	config.dither = CLAMP_INT(config.dither, 0, 1);
+	config.touch_distance_threshold =
+		CLAMP_FLOAT(config.touch_distance_threshold, 1.0f, 10000.0f);
+	config.touch_degrees_leniency =
+		CLAMP_FLOAT(config.touch_degrees_leniency, 0.0f, 45.0f);
+	config.touch_timeoutms = CLAMP_INT(config.touch_timeoutms, 1, 60000);
+	config.touch_edge_size_left =
+		CLAMP_FLOAT(config.touch_edge_size_left, 1.0f, 10000.0f);
+	config.touch_edge_size_top =
+		CLAMP_FLOAT(config.touch_edge_size_top, 1.0f, 10000.0f);
+	config.touch_edge_size_right =
+		CLAMP_FLOAT(config.touch_edge_size_right, 1.0f, 10000.0f);
+	config.touch_edge_size_bottom =
+		CLAMP_FLOAT(config.touch_edge_size_bottom, 1.0f, 10000.0f);
 	config.gappih = CLAMP_INT(config.gappih, 0, 1000);
 	config.gappiv = CLAMP_INT(config.gappiv, 0, 1000);
 	config.gappoh = CLAMP_INT(config.gappoh, 0, 1000);
@@ -3385,6 +3624,13 @@ void set_value_default() {
 	config.tablet_rotation = 0;
 	config.dither_mode = 2;
 	config.dither = 0;
+	config.touch_distance_threshold = 50.0;
+	config.touch_degrees_leniency = 15.0;
+	config.touch_timeoutms = 800;
+	config.touch_edge_size_left = 50.0;
+	config.touch_edge_size_top = 50.0;
+	config.touch_edge_size_right = 50.0;
+	config.touch_edge_size_bottom = 50.0;
 	config.view_current_to_back = 0;
 	config.single_scratchpad = 1;
 	config.xwayland_persistence = 1;
@@ -3579,6 +3825,8 @@ bool parse_config(void) {
 	config.switch_bindings_count = 0;
 	config.gesture_bindings = NULL;
 	config.gesture_bindings_count = 0;
+	config.touch_gesture_bindings = NULL;
+	config.touch_gesture_bindings_count = 0;
 	config.env = NULL;
 	config.env_count = 0;
 	config.exec = NULL;
