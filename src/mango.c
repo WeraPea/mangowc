@@ -149,6 +149,32 @@ enum { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT };
 
 enum { VERTICAL, HORIZONTAL };
 enum { SWIPE_UP, SWIPE_DOWN, SWIPE_LEFT, SWIPE_RIGHT };
+enum {
+	TOUCH_SWIPE_UP,
+	TOUCH_SWIPE_DOWN,
+	TOUCH_SWIPE_RIGHT,
+	TOUCH_SWIPE_LEFT,
+	TOUCH_SWIPE_UP_RIGHT,
+	TOUCH_SWIPE_UP_LEFT,
+	TOUCH_SWIPE_DOWN_LEFT,
+	TOUCH_SWIPE_DOWN_RIGHT,
+	TOUCH_SWIPE_NONE
+};
+
+enum {
+	EDGE_ANY,
+	EDGE_NONE,
+	EDGE_LEFT,
+	EDGE_RIGHT,
+	EDGE_TOP,
+	EDGE_BOTTOM,
+	CORNER_TOP_LEFT,
+	CORNER_TOP_RIGHT,
+	CORNER_BOTTOM_LEFT,
+	CORNER_BOTTOM_RIGHT,
+};
+
+enum { DISTANCE_ANY, DISTANCE_SHORT, DISTANCE_MEDIUM, DISTANCE_LONG };
 enum { CurNormal, CurPressed, CurMove, CurResize }; /* cursor */
 enum { XDGShell, LayerShell, X11 };					/* client types */
 enum { AxisUp, AxisDown, AxisLeft, AxisRight };		// 滚轮滚动的方向
@@ -455,12 +481,17 @@ typedef struct {
 typedef struct {
 	struct wl_list link;
 	int32_t touch_id;
+	double start_x, start_y, end_x, end_y;
+	bool consumed_by_gesture;
 } TouchPoint;
 
 typedef struct TouchGroup {
 	struct wl_list link;
 	struct wlr_touch *touch;
 	struct wl_list touch_points;
+	struct timespec time_down;
+	uint32_t pending_swipe;
+	uint32_t touch_points_pending_swipe;
 	Monitor *m;
 } TouchGroup;
 
@@ -700,6 +731,7 @@ static void touchup(struct wl_listener *listener, void *data);
 static void touchframe(struct wl_listener *listener, void *data);
 static void touchmotion(struct wl_listener *listener, void *data);
 static void touchcancel(struct wl_listener *listener, void *data);
+static void handle_touchcancel(struct wlr_touch_cancel_event *event);
 
 static void unlocksession(struct wl_listener *listener, void *data);
 static void unmaplayersurfacenotify(struct wl_listener *listener, void *data);
@@ -1034,6 +1066,7 @@ static struct wl_event_source *sync_keymap;
 #include "animation/layer.h"
 #include "animation/tag.h"
 #include "dispatch/bind_define.h"
+#include "dispatch/gesture.h"
 #include "ext-protocol/all.h"
 #include "fetch/fetch.h"
 #include "layout/arrange.h"
@@ -5886,10 +5919,8 @@ void touchdown(struct wl_listener *listener, void *data) {
 	double dx, dy;
 	struct wlr_surface *surface;
 	Client *c = NULL;
-	Monitor *m;
-
-	t->touch_id = event->touch_id;
-	wl_list_insert(&tg->touch_points, &t->link);
+	Monitor *m = NULL;
+	Monitor *m_iter;
 
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
@@ -5899,8 +5930,8 @@ void touchdown(struct wl_listener *listener, void *data) {
 
 	// Map the input to the appropriate output, to ensure that rotation is
 	// handled.
-	wl_list_for_each(m, &mons, link) {
-		if (m == NULL || m->wlr_output == NULL) {
+	wl_list_for_each(m_iter, &mons, link) {
+		if (m_iter == NULL || m_iter->wlr_output == NULL) {
 			continue;
 		}
 		if (event->touch->output_name != NULL &&
@@ -5909,11 +5940,22 @@ void touchdown(struct wl_listener *listener, void *data) {
 		}
 
 		wlr_cursor_map_input_to_output(cursor, &event->touch->base,
-									   m->wlr_output);
+									   m_iter->wlr_output);
+		m = m_iter;
+		break;
 	}
+
+	/* ensure touch group has a monitor */
+	if (!tg->m)
+		tg->m = m; // TODO: properly handle output_name = null, instead of
+				   // falling back to last monitor in the list;
 
 	wlr_cursor_absolute_to_layout_coords(cursor, &event->touch->base, event->x,
 										 event->y, &lx, &ly);
+
+	t->touch_id = event->touch_id;
+	gesture_touch_down(tg, t, lx, ly);
+	wl_list_insert(&tg->touch_points, &t->link);
 
 	/* Find the client under the pointer and send the event along. */
 	xytonode(lx, ly, &surface, &c, NULL, &sx, &sy);
@@ -5942,7 +5984,7 @@ void touchdown(struct wl_listener *listener, void *data) {
 			.time_msec = event->time_msec,
 			.button = BTN_LEFT,
 			.state = WL_POINTER_BUTTON_STATE_PRESSED};
-		buttonpress(listener, &button_event);
+		buttonpress(NULL, &button_event);
 	}
 }
 
@@ -5960,6 +6002,15 @@ void touchup(struct wl_listener *listener, void *data) {
 	}
 	if (!t) // invalid or cancelled
 		return;
+
+	gesture_touch_up(tg, t);
+
+	if (t->consumed_by_gesture) {
+		wl_list_remove(&t->link);
+		free(t);
+		return;
+	}
+
 	wl_list_remove(&t->link);
 	free(t);
 
@@ -5970,7 +6021,7 @@ void touchup(struct wl_listener *listener, void *data) {
 				.time_msec = event->time_msec,
 				.button = BTN_LEFT,
 				.state = WL_POINTER_BUTTON_STATE_RELEASED};
-			buttonpress(listener, &button_event);
+			buttonpress(NULL, &button_event);
 
 			emulating_pointer_from_touch = false;
 		}
@@ -6017,10 +6068,13 @@ void touchmotion(struct wl_listener *listener, void *data) {
 	if (!t) // invalid or cancelled
 		return;
 
+	wlr_cursor_absolute_to_layout_coords(cursor, &event->touch->base, event->x,
+										 event->y, &lx, &ly);
+
+	gesture_touch_motion(tg, t, lx, ly);
+
 	if (emulating_pointer_from_touch) {
 		if (emulated_pointer_touch_id == event->touch_id) {
-			wlr_cursor_absolute_to_layout_coords(cursor, &event->touch->base,
-												 event->x, event->y, &lx, &ly);
 			dx = lx - cursor->x;
 			dy = ly - cursor->y;
 			motionnotify(event->time_msec, &event->touch->base, dx, dy, dx, dy);
@@ -6034,8 +6088,6 @@ void touchmotion(struct wl_listener *listener, void *data) {
 		return;
 	}
 
-	wlr_cursor_absolute_to_layout_coords(cursor, &event->touch->base, event->x,
-										 event->y, &lx, &ly);
 	surface = p->surface;
 	if (surface && surface->data) {
 		tree = surface->data;
@@ -6066,9 +6118,6 @@ void touchcancel(struct wl_listener *listener, void *data) {
 	TouchGroup *tg = event->touch->data;
 	TouchPoint *t = NULL;
 	TouchPoint *t_iter;
-	struct wlr_touch_point *p = NULL;
-	struct wl_client *client = NULL;
-	struct wlr_seat_client *seat_client = NULL;
 
 	wl_list_for_each(t_iter, &tg->touch_points, link) {
 		if (t_iter->touch_id == event->touch_id) {
@@ -6082,6 +6131,17 @@ void touchcancel(struct wl_listener *listener, void *data) {
 	wl_list_remove(&t->link);
 	free(t);
 
+	if (wl_list_length(&tg->touch_points) == 0)
+		tg->touch_points_pending_swipe = 0;
+
+	handle_touchcancel(event);
+}
+
+void handle_touchcancel(struct wlr_touch_cancel_event *event) {
+	struct wlr_touch_point *p = NULL;
+	struct wl_client *client = NULL;
+	struct wlr_seat_client *seat_client = NULL;
+
 	if (emulating_pointer_from_touch) {
 		if (emulated_pointer_touch_id == event->touch_id) {
 			struct wlr_pointer_button_event button_event = {
@@ -6089,7 +6149,7 @@ void touchcancel(struct wl_listener *listener, void *data) {
 				.time_msec = event->time_msec,
 				.button = BTN_LEFT,
 				.state = WL_POINTER_BUTTON_STATE_RELEASED};
-			buttonpress(listener, &button_event);
+			buttonpress(NULL, &button_event);
 
 			emulating_pointer_from_touch = false;
 		}
