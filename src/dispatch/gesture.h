@@ -129,7 +129,7 @@ int32_t gesture_execute(int32_t nfingers, uint32_t swipe, uint32_t edge,
 	for (i = 0; i < config.touch_gesture_bindings_count; i++) {
 		g = &config.touch_gesture_bindings[i];
 		if (swipe == g->swipe && nfingers == g->fingers_count &&
-			distance >= g->distance &&
+			(distance == g->distance || g->distance == DISTANCE_ANY) &&
 			(g->edge == EDGE_ANY || edge == g->edge ||
 			 ((edge == CORNER_TOP_LEFT || edge == CORNER_TOP_RIGHT) &&
 			  g->edge == EDGE_TOP) ||
