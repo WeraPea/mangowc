@@ -481,7 +481,7 @@ typedef struct {
 typedef struct {
 	struct wl_list link;
 	int32_t touch_id;
-	double start_x, start_y, end_x, end_y;
+	double start_x, start_y, end_x, end_y, start_surface_x, start_surface_y;
 	bool consumed_by_gesture;
 } TouchPoint;
 
@@ -5975,11 +5975,15 @@ void touchdown(struct wl_listener *listener, void *data) {
 										 event->y, &lx, &ly);
 
 	t->touch_id = event->touch_id;
+	t->start_x = lx;
+	t->start_y = ly;
 	gesture_touch_down(tg, t, lx, ly);
 	wl_list_insert(&tg->touch_points, &t->link);
 
 	/* Find the client under the pointer and send the event along. */
 	xytonode(lx, ly, &surface, &c, NULL, &sx, &sy);
+	t->start_surface_x = sx;
+	t->start_surface_y = sy;
 	if (surface != NULL && wlr_surface_accepts_touch(surface, seat)) {
 		if (c)
 			focusclient(c, 0);
@@ -6074,10 +6078,8 @@ void touchmotion(struct wl_listener *listener, void *data) {
 	double lx, ly;
 	double sx, sy;
 	double dx, dy;
-	int32_t node_x, node_y;
 	struct wlr_surface *surface;
 	Client *c = NULL;
-	struct wlr_scene_tree *tree;
 	struct wlr_touch_point *p = NULL;
 
 	wl_list_for_each(t_iter, &tg->touch_points, link) {
@@ -6109,29 +6111,19 @@ void touchmotion(struct wl_listener *listener, void *data) {
 		return;
 	}
 
+	sx = t->start_surface_x + (lx - t->start_x);
+	sy = t->start_surface_y + (ly - t->start_y);
+
 	surface = p->surface;
 	if (surface && surface->data) {
-		tree = surface->data;
-		wlr_scene_node_coords(&tree->node, &node_x, &node_y);
-		sx = lx - node_x;
-		sy = ly - node_y;
-
 		toplevel_from_wlr_surface(surface, &c, NULL);
 		if (c)
 			focusclient(c, 0);
-
-		wlr_seat_touch_point_focus(seat, surface, event->time_msec,
-								   event->touch_id, sx, sy);
-		wlr_seat_touch_notify_motion(seat, event->time_msec, event->touch_id,
-									 sx, sy);
-
-		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
-	} else {
-		focusclient(NULL, 0);
-		wlr_seat_touch_point_clear_focus(seat, event->time_msec,
-										 event->touch_id);
-		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 	}
+	wlr_seat_touch_notify_motion(seat, event->time_msec, event->touch_id, sx,
+								 sy);
+
+	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 }
 
 void touchcancel(struct wl_listener *listener, void *data) {
