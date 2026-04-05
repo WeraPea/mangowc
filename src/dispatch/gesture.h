@@ -173,8 +173,6 @@ void gesture_consume(TouchGroup *tg, TouchPoint *t) {
 void gesture_touch_down(TouchGroup *tg, TouchPoint *t, double x, double y) {
 	wlr_log(WLR_DEBUG, "touch_down id: %d", t->touch_id);
 
-	t->start_x = x;
-	t->start_y = y;
 	t->end_x = x;
 	t->end_y = y;
 
