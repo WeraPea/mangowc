@@ -2896,16 +2896,6 @@ bool parse_option(Config *config, char *key, char *value) {
 		binding->arg.v3 = NULL;
 		binding->arg.tc = NULL;
 
-		// TODO: remove this in next version
-		if (binding->mod == 0 &&
-			(binding->button == BTN_LEFT || binding->button == BTN_RIGHT)) {
-			fprintf(stderr,
-					"\033[1m\033[31m[ERROR]:\033[33m \033[31m%s\033[33m can't "
-					"bind to \033[31m%s\033[33m mod key\n",
-					button_str, mod_str);
-			return false;
-		}
-
 		binding->func =
 			parse_func_name(func_name, &binding->arg, arg_value, arg_value2,
 							arg_value3, arg_value4, arg_value5);
