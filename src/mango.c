@@ -2263,9 +2263,7 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 			}
 
 			if (CLEANMASK(mods) == CLEANMASK(m->mod) &&
-				event->button == m->button && m->func &&
-				(CLEANMASK(m->mod) != 0 ||
-				 (event->button != BTN_LEFT && event->button != BTN_RIGHT))) {
+				event->button == m->button && m->func) {
 				m->func(&m->arg);
 				return true;
 			}
