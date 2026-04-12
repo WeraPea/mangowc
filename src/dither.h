@@ -106,9 +106,13 @@ varying highp vec2 v_pos;
 void main() {
   vec4 color = texture2D(u_tex, v_uv);
   vec2 noise_uv = mod(v_pos, u_noise_size) / u_noise_size;
-  float threshold = (texture2D(u_noise, noise_uv).r - 0.5) / u_levels;
-  vec3 dithered = color.rgb + threshold;
-  dithered = floor(dithered * u_levels + 0.5) / u_levels;
+  float threshold = texture2D(u_noise, noise_uv).r;
+  vec3 scaled = color.rgb * (u_levels - 1.0);
+  vec3 lo = floor(scaled);
+  vec3 raw_frac = scaled - lo;
+  float eps = 0.5 / 255.0;
+  vec3 dither = step(eps, raw_frac) * step(raw_frac, vec3(1.0 - eps)) * step(threshold, raw_frac);
+  vec3 dithered = (lo + dither) / (u_levels - 1.0);
   gl_FragColor = vec4(clamp(dithered, 0.0, 1.0), color.a);
 })";
 
@@ -362,7 +366,7 @@ struct wlr_buffer *render_dithered(Monitor *m, bool return_buffer,
 	glBindTexture(GL_TEXTURE_2D, dither_gl.noise_tex);
 	glUniform1i(dither_gl.u_noise, 1);
 
-	glUniform1f(dither_gl.u_levels, 15.0f);
+	glUniform1f(dither_gl.u_levels, 16.0f);
 	glUniform2f(dither_gl.u_size, (float)width, (float)height);
 	glUniform2f(dither_gl.u_noise_size, (float)dither_gl.noise_size,
 				(float)dither_gl.noise_size);
