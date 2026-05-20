@@ -10,7 +10,10 @@
 		"visuals",
 		"window-management",
 		"bindings",
+		"---Examples---",
+		"screenshot",
 		"---Reference---",
+		"nix-options",
 		"ipc",
 		"faq"
 	]
