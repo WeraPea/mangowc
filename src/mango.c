@@ -6794,19 +6794,33 @@ void touchdown(struct wl_listener *listener, void *data) {
 
 	// Map the input to the appropriate output, to ensure that rotation is
 	// handled.
-	wl_list_for_each(m_iter, &mons, link) {
-		if (m_iter == NULL || m_iter->wlr_output == NULL) {
-			continue;
+	if (config.touchscreen_map_to_mon) {
+		wl_list_for_each(m_iter, &mons, link) {
+			if (match_monitor_spec(config.touchscreen_map_to_mon, m_iter)) {
+				wlr_log(WLR_DEBUG, "Mapping touchscreen %s to output %s",
+						event->touch->base.name, config.touchscreen_map_to_mon);
+				wlr_cursor_map_input_to_output(cursor, &event->touch->base,
+											   m_iter->wlr_output);
+				m = m_iter;
+				break;
+			}
 		}
-		if (event->touch->output_name != NULL &&
-			0 != strcmp(event->touch->output_name, m->wlr_output->name)) {
-			continue;
-		}
+	}
+	if (m == NULL) {
+		wl_list_for_each(m_iter, &mons, link) {
+			if (m_iter == NULL || m_iter->wlr_output == NULL) {
+				continue;
+			}
+			if (event->touch->output_name != NULL &&
+				0 != strcmp(event->touch->output_name, m->wlr_output->name)) {
+				continue;
+			}
 
-		wlr_cursor_map_input_to_output(cursor, &event->touch->base,
-									   m_iter->wlr_output);
-		m = m_iter;
-		break;
+			wlr_cursor_map_input_to_output(cursor, &event->touch->base,
+										   m_iter->wlr_output);
+			m = m_iter;
+			break;
+		}
 	}
 
 	/* ensure touch group has a monitor */

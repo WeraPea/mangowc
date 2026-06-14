@@ -316,6 +316,7 @@ typedef struct {
 	char *tablet_map_to_mon;
 
     /* touchscreen */
+	char *touchscreen_map_to_mon;
 	double touch_distance_threshold;
 	double touch_degrees_leniency;
 	uint32_t touch_timeoutms;
@@ -2068,6 +2069,10 @@ bool parse_option(Config *config, char *key, char *value) {
 		if (config->tablet_map_to_mon)
 			free(config->tablet_map_to_mon);
 		config->tablet_map_to_mon = strdup(value);
+	} else if (strcmp(key, "touchscreen_map_to_mon") == 0) {
+		if (config->touchscreen_map_to_mon)
+			free(config->touchscreen_map_to_mon);
+		config->touchscreen_map_to_mon = strdup(value);
 	} else if (strcmp(key, "touch_distance_threshold") == 0) {
 		config->touch_distance_threshold = atof(value);
 	} else if (strcmp(key, "touch_degrees_leniency") == 0) {
@@ -3666,6 +3671,11 @@ void free_config(void) {
 		config.tablet_map_to_mon = NULL;
 	}
 
+	if (config.touchscreen_map_to_mon) {
+		free(config.touchscreen_map_to_mon);
+		config.touchscreen_map_to_mon = NULL;
+	}
+
 	// 释放 circle_layout
 	free_circle_layout(&config);
 
@@ -4239,6 +4249,7 @@ bool parse_config(void) {
 	config.jumplabeldata.font_desc = NULL;
 	config.tabdata.font_desc = NULL;
 	config.tablet_map_to_mon = NULL;
+	config.touchscreen_map_to_mon = NULL;
 	strcpy(config.keymode, "default");
 
 	create_config_keymap();
