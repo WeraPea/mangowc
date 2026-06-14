@@ -6810,9 +6810,11 @@ void touchdown(struct wl_listener *listener, void *data) {
 	}
 
 	/* ensure touch group has a monitor */
+	if (m == NULL)
+		m = m_iter; // TODO: properly handle output_name = null, instead of
+					// falling back to last monitor in the list;
 	if (!tg->m)
-		tg->m = m; // TODO: properly handle output_name = null, instead of
-				   // falling back to last monitor in the list;
+		tg->m = m;
 
 	wlr_cursor_absolute_to_layout_coords(cursor, &event->touch->base, event->x,
 										 event->y, &lx, &ly);
