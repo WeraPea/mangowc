@@ -85,6 +85,11 @@ uint32_t gesture_calculate_edge(Monitor *m, double x0, double y0, double x1,
 	uint32_t horizontal = EDGE_NONE;
 	uint32_t vertical = EDGE_NONE;
 
+	x0 -= m->m.x;
+	y0 -= m->m.y;
+	x1 -= m->m.x;
+	y1 -= m->m.y;
+
 	if (x0 <= config.touch_edge_size_left) {
 		horizontal = EDGE_LEFT;
 	} else if (x0 >= m->m.width - config.touch_edge_size_right) {
