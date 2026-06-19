@@ -6839,6 +6839,11 @@ void touchdown(struct wl_listener *listener, void *data) {
 	gesture_touch_down(tg, t, lx, ly);
 	wl_list_insert(&tg->touch_points, &t->link);
 
+	Monitor *oldmon = selmon;
+	selmon = xytomon(lx, ly);
+	if (oldmon != selmon)
+		printstatus(IPC_WATCH_MONITOR | IPC_WATCH_ALL_MONITORS);
+
 	/* Find the client under the pointer and send the event along. */
 	xytonode(lx, ly, &surface, &c, NULL, &sx, &sy);
 	t->start_surface_x = sx;
