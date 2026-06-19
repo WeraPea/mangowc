@@ -5000,7 +5000,7 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 		if (config.sloppyfocus)
 			selmon = xytomon(logical_cursor_x, logical_cursor_y);
 		if (oldmon != selmon)
-			printstatus(IPC_WATCH_MONITOR);
+			printstatus(IPC_WATCH_MONITOR | IPC_WATCH_ALL_MONITORS);
 	}
 
 	/* Find the client under the pointer and send the event along. */

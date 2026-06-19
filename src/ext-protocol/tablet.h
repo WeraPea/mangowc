@@ -286,7 +286,7 @@ void tablettoolmotion(struct TabletTool *tool, bool change_x, bool change_y,
 	if (config.sloppyfocus)
 		selmon = xytomon(cursor->x, cursor->y);
 	if (oldmon != selmon)
-		printstatus(IPC_WATCH_MONITOR);
+		printstatus(IPC_WATCH_MONITOR | IPC_WATCH_ALL_MONITORS);
 
 	xytonode(logical_cursor_x, logical_cursor_y, &surface, &c, NULL, &sx, &sy);
 	if (cursor_mode == CurPressed && !seat->drag &&
