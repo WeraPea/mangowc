@@ -152,6 +152,7 @@ int32_t gesture_execute(int32_t nfingers, uint32_t swipe, uint32_t edge,
 	return handled;
 }
 
+// TODO: handle all touchpoints including sending cancel events per client
 void gesture_consume(TouchGroup *tg, TouchPoint *t) {
 	if (t->consumed_by_gesture)
 		return;
@@ -176,13 +177,23 @@ void gesture_consume(TouchGroup *tg, TouchPoint *t) {
 }
 
 void gesture_touch_down(TouchGroup *tg, TouchPoint *t, double x, double y) {
+	TouchPoint *t_iter;
+
 	wlr_log(WLR_DEBUG, "touch_down id: %d", t->touch_id);
 
 	t->end_x = x;
 	t->end_y = y;
 
-	if (wl_list_empty(&tg->touch_points))
+	if (wl_list_length(&tg->touch_points) == 1)
 		clock_gettime(CLOCK_MONOTONIC_RAW, &tg->time_down);
+
+	if (config.touch_cancel_threshold_touches != 0 &&
+		wl_list_length(&tg->touch_points) >=
+			config.touch_cancel_threshold_touches) {
+		wl_list_for_each(t_iter, &tg->touch_points, link) {
+			gesture_consume(tg, t_iter);
+		}
+	}
 }
 
 void gesture_touch_motion(TouchGroup *tg, TouchPoint *t, double x, double y) {
