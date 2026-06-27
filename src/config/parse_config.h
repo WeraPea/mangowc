@@ -324,6 +324,7 @@ typedef struct {
 	double touch_edge_size_top;
 	double touch_edge_size_right;
 	double touch_edge_size_bottom;
+	uint32_t touch_cancel_threshold_touches;
 
 	/* Trackpad */
 	int32_t trackpad_natural_scrolling;
@@ -2087,6 +2088,8 @@ bool parse_option(Config *config, char *key, char *value) {
 		config->touch_edge_size_right = atof(value);
 	} else if (strcmp(key, "touch_edge_size_bottom") == 0) {
 		config->touch_edge_size_bottom = atof(value);
+	} else if (strcmp(key, "touch_cancel_threshold_touches") == 0) {
+		config->touch_cancel_threshold_touches = atoi(value);
 	} else if (strcmp(key, "trackpad_scroll_factor") == 0) {
 		config->trackpad_scroll_factor = atof(value);
 	} else if (strcmp(key, "gappih") == 0) {
@@ -3842,6 +3845,8 @@ void override_config(void) {
 		CLAMP_FLOAT(config.touch_edge_size_right, 1.0f, 10000.0f);
 	config.touch_edge_size_bottom =
 		CLAMP_FLOAT(config.touch_edge_size_bottom, 1.0f, 10000.0f);
+	config.touch_cancel_threshold_touches =
+		CLAMP_INT(config.touch_cancel_threshold_touches, 0, 20);
 	config.gappih = CLAMP_INT(config.gappih, 0, 1000);
 	config.gappiv = CLAMP_INT(config.gappiv, 0, 1000);
 	config.gappoh = CLAMP_INT(config.gappoh, 0, 1000);
@@ -3973,6 +3978,7 @@ void set_value_default() {
 	config.touch_edge_size_top = 50.0;
 	config.touch_edge_size_right = 50.0;
 	config.touch_edge_size_bottom = 50.0;
+	config.touch_cancel_threshold_touches = 0;
 	config.view_current_to_back = 0;
 	config.single_scratchpad = 1;
 	config.xwayland_persistence = 1;

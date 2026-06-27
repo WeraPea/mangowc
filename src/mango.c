@@ -6833,16 +6833,19 @@ void touchdown(struct wl_listener *listener, void *data) {
 	wlr_cursor_absolute_to_layout_coords(cursor, &event->touch->base, event->x,
 										 event->y, &lx, &ly);
 
-	t->touch_id = event->touch_id;
-	t->start_x = lx;
-	t->start_y = ly;
-	gesture_touch_down(tg, t, lx, ly);
-	wl_list_insert(&tg->touch_points, &t->link);
-
 	Monitor *oldmon = selmon;
 	selmon = xytomon(lx, ly);
 	if (oldmon != selmon)
 		printstatus(IPC_WATCH_MONITOR | IPC_WATCH_ALL_MONITORS);
+
+	t->touch_id = event->touch_id;
+	t->start_x = lx;
+	t->start_y = ly;
+	wl_list_insert(&tg->touch_points, &t->link);
+	gesture_touch_down(tg, t, lx, ly);
+
+	if (t->consumed_by_gesture)
+		return;
 
 	/* Find the client under the pointer and send the event along. */
 	xytonode(lx, ly, &surface, &c, NULL, &sx, &sy);
