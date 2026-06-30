@@ -2102,3 +2102,12 @@ int32_t screen_zoom_move(const Arg *arg) {
 	wlr_cursor_set_xcursor(cursor, cursor_mgr, "grab");
 	return 0;
 }
+int32_t load_config_file(const Arg *arg) {
+	if (!arg->v) {
+		cli_config_path[0] = '\0';
+		return 0;
+	}
+	snprintf(cli_config_path, sizeof(cli_config_path), "%s", arg->v);
+	reload_config(arg);
+	return 0;
+}
