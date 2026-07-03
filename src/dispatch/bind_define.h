@@ -2111,3 +2111,43 @@ int32_t load_config_file(const Arg *arg) {
 	reload_config(arg);
 	return 0;
 }
+
+void set_touchscreen_send_events(enum libinput_config_send_events_mode mode) {
+	InputDevice *id;
+	wl_list_for_each(id, &inputdevices, link) {
+		if (id->wlr_device->type != WLR_INPUT_DEVICE_TOUCH) {
+			continue;
+		}
+		uint32_t possible =
+			libinput_device_config_send_events_get_modes(id->libinput_device);
+		if (possible & mode || mode == LIBINPUT_CONFIG_SEND_EVENTS_ENABLED)
+			libinput_device_config_send_events_set_mode(id->libinput_device,
+														mode);
+	}
+}
+
+int32_t disable_touchscreen(const Arg *arg) {
+	set_touchscreen_send_events(LIBINPUT_CONFIG_SEND_EVENTS_DISABLED);
+	return 0;
+}
+
+int32_t enable_touchscreen(const Arg *arg) {
+	set_touchscreen_send_events(LIBINPUT_CONFIG_SEND_EVENTS_ENABLED);
+	return 0;
+}
+
+int32_t toggle_touchscreen(const Arg *arg) {
+	InputDevice *id;
+	wl_list_for_each(id, &inputdevices, link) {
+		if (id->wlr_device->type != WLR_INPUT_DEVICE_TOUCH) {
+			continue;
+		}
+		enum libinput_config_send_events_mode current =
+			libinput_device_config_send_events_get_mode(id->libinput_device);
+		set_touchscreen_send_events(current ==
+											LIBINPUT_CONFIG_SEND_EVENTS_ENABLED
+										? LIBINPUT_CONFIG_SEND_EVENTS_DISABLED
+										: LIBINPUT_CONFIG_SEND_EVENTS_ENABLED);
+	}
+	return 0;
+}
