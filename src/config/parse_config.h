@@ -325,7 +325,7 @@ typedef struct {
 	/* tablet */
 	char *tablet_map_to_mon;
 
-    /* touchscreen */
+	/* touchscreen */
 	char *touchscreen_map_to_mon;
 	double touch_distance_threshold;
 	double touch_degrees_leniency;
@@ -1447,6 +1447,12 @@ FuncType parse_func_name(char *func_name, Arg *arg, char *arg_value,
 		(*arg).f = atof(arg_value);
 	} else if (strcmp(func_name, "screen_zoom_move") == 0) {
 		func = screen_zoom_move;
+	} else if (strcmp(func_name, "disable_touchscreen") == 0) {
+		func = disable_touchscreen;
+	} else if (strcmp(func_name, "enable_touchscreen") == 0) {
+		func = enable_touchscreen;
+	} else if (strcmp(func_name, "toggle_touchscreen") == 0) {
+		func = toggle_touchscreen;
 	} else {
 		return NULL;
 	}

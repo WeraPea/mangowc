@@ -88,3 +88,6 @@ int32_t screen_zoom_out(const Arg *arg);
 int32_t screen_zoom_reset(const Arg *arg);
 int32_t screen_zoom_set(const Arg *arg);
 int32_t screen_zoom_move(const Arg *arg);
+int32_t disable_touchscreen(const Arg *arg);
+int32_t enable_touchscreen(const Arg *arg);
+int32_t toggle_touchscreen(const Arg *arg);
