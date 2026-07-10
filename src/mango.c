@@ -8117,6 +8117,16 @@ void virtualkeyboard(struct wl_listener *listener, void *data) {
 
 	/* Add the new keyboard to the group */
 	wlr_keyboard_group_add_keyboard(group->wlr_group, &kb->keyboard);
+
+	InputDevice *input_dev = calloc(1, sizeof(InputDevice));
+	input_dev->wlr_device = &kb->keyboard.base;
+	input_dev->device_data = &kb->keyboard;
+
+	input_dev->destroy_listener.notify = destroyinputdevice;
+	wl_signal_add(&kb->keyboard.base.events.destroy,
+				  &input_dev->destroy_listener);
+
+	wl_list_insert(&inputdevices, &input_dev->link);
 }
 
 void warp_cursor(const Client *c) {
