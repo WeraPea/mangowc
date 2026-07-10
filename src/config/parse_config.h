@@ -4672,7 +4672,6 @@ void reapply_tagrule(void) {
 
 void reset_option(void) {
 	init_baked_points();
-	handlecursoractivity();
 	reset_keyboard_layout();
 	reset_blur_params();
 	set_env_without_display();
