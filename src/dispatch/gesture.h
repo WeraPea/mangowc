@@ -237,8 +237,10 @@ void gesture_touch_up(TouchGroup *tg, TouchPoint *t) {
 			((now.tv_sec - tg->time_down.tv_sec) * 1000 +
 			 (now.tv_nsec - tg->time_down.tv_nsec) / 1000000)) {
 			if (gesture_execute(tg->touch_points_pending_swipe,
-								tg->pending_swipe, edge, distance))
+								tg->pending_swipe, edge, distance)) {
 				gesture_consume(tg, t);
+				hidecursor(NULL);
+			}
 
 			tg->touch_points_pending_swipe = 0;
 		}
