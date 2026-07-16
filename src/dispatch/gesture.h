@@ -181,8 +181,10 @@ void gesture_touch_down(TouchGroup *tg, TouchPoint *t, double x, double y) {
 
 	wlr_log(WLR_DEBUG, "touch_down id: %d", t->touch_id);
 
-	t->end_x = x;
-	t->end_y = y;
+	t->gesture_start_x = x;
+	t->gesture_start_y = y;
+	t->gesture_end_x = x;
+	t->gesture_end_y = y;
 
 	if (wl_list_length(&tg->touch_points) == 1)
 		clock_gettime(CLOCK_MONOTONIC_RAW, &tg->time_down);
@@ -197,8 +199,8 @@ void gesture_touch_down(TouchGroup *tg, TouchPoint *t, double x, double y) {
 }
 
 void gesture_touch_motion(TouchGroup *tg, TouchPoint *t, double x, double y) {
-	t->end_x = x;
-	t->end_y = y;
+	t->gesture_end_x = x;
+	t->gesture_end_y = y;
 }
 
 void gesture_touch_up(TouchGroup *tg, TouchPoint *t) {
@@ -210,7 +212,7 @@ void gesture_touch_up(TouchGroup *tg, TouchPoint *t) {
 	clock_gettime(CLOCK_MONOTONIC_RAW, &now);
 
 	uint32_t swipe =
-		gesture_calculate_swipe(t->start_x, t->start_y, t->end_x, t->end_y);
+		gesture_calculate_swipe(t->gesture_start_x, t->gesture_start_y, t->gesture_end_x, t->gesture_end_y);
 
 	if (swipe == TOUCH_SWIPE_NONE) {
 		goto cleanup;
@@ -228,10 +230,10 @@ void gesture_touch_up(TouchGroup *tg, TouchPoint *t) {
 	// All fingers up - check if within millisecond limit, exec, & reset
 	// (we are the last finger)
 	if (wl_list_length(&tg->touch_points) == 1) {
-		uint32_t edge = gesture_calculate_edge(tg->m, t->start_x, t->start_y,
-											   t->end_x, t->end_y);
+		uint32_t edge = gesture_calculate_edge(tg->m, t->gesture_start_x, t->gesture_start_y,
+											   t->gesture_end_x, t->gesture_end_y);
 		uint32_t distance = gesture_calculate_distance(
-			tg->m, t->start_x, t->start_y, t->end_x, t->end_y, swipe);
+			tg->m, t->gesture_start_x, t->gesture_start_y, t->gesture_end_x, t->gesture_end_y, swipe);
 
 		if (config.touch_timeoutms >
 			((now.tv_sec - tg->time_down.tv_sec) * 1000 +
