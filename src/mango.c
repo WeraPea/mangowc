@@ -523,7 +523,8 @@ typedef struct {
 typedef struct {
 	struct wl_list link;
 	int32_t touch_id;
-	double start_x, start_y, end_x, end_y, start_surface_x, start_surface_y;
+	double start_x, start_y, start_surface_x, start_surface_y;
+	double gesture_start_x, gesture_start_y, gesture_end_x, gesture_end_y;
 	bool consumed_by_gesture;
 } TouchPoint;
 
@@ -7152,7 +7153,6 @@ void touchdown(struct wl_listener *listener, void *data) {
 	TouchPoint *t = ecalloc(1, sizeof(TouchPoint));
 	double lx, ly;
 	double sx, sy;
-	double dx, dy;
 	struct wlr_surface *surface;
 	Client *c = NULL;
 	Monitor *m = NULL;
@@ -7214,8 +7214,8 @@ void touchdown(struct wl_listener *listener, void *data) {
 		printstatus(IPC_WATCH_MONITOR | IPC_WATCH_ALL_MONITORS);
 
 	t->touch_id = event->touch_id;
-	t->start_x = lx;
-	t->start_y = ly;
+	t->start_x = logical_cursor_x;
+	t->start_y = logical_cursor_y;
 	wl_list_insert(&tg->touch_points, &t->link);
 	gesture_touch_down(tg, t, lx, ly);
 
@@ -7237,7 +7237,8 @@ void touchdown(struct wl_listener *listener, void *data) {
 	}
 
 	/* Find the client under the pointer and send the event along. */
-	xytonode(lx, ly, &surface, &c, NULL, NULL, &sx, &sy);
+	xytonode(logical_cursor_x, logical_cursor_y, &surface, &c, NULL, NULL, &sx,
+			 &sy);
 	t->start_surface_x = sx;
 	t->start_surface_y = sy;
 	if (surface != NULL && wlr_surface_accepts_touch(surface, seat)) {
@@ -7256,9 +7257,7 @@ void touchdown(struct wl_listener *listener, void *data) {
 		emulating_pointer_from_touch = true;
 		emulated_pointer_touch_id = event->touch_id;
 
-		dx = lx - cursor->x;
-		dy = ly - cursor->y;
-		motionnotify(event->time_msec, &event->touch->base, dx, dy, dx, dy);
+		motionnotify(event->time_msec, &event->touch->base, 0, 0, 0, 0);
 		wlr_seat_pointer_notify_button(seat, button_event.time_msec,
 									   button_event.button, button_event.state);
 	}
@@ -7329,7 +7328,6 @@ void touchmotion(struct wl_listener *listener, void *data) {
 	TouchPoint *t_iter;
 	double lx, ly;
 	double sx, sy;
-	double dx, dy;
 	struct wlr_surface *surface;
 	Client *c = NULL;
 	struct wlr_touch_point *p = NULL;
@@ -7353,9 +7351,7 @@ void touchmotion(struct wl_listener *listener, void *data) {
 
 	if (emulating_pointer_from_touch) {
 		if (emulated_pointer_touch_id == event->touch_id) {
-			dx = lx - cursor->x;
-			dy = ly - cursor->y;
-			motionnotify(event->time_msec, &event->touch->base, dx, dy, dx, dy);
+			motionnotify(event->time_msec, &event->touch->base, 0, 0, 0, 0);
 			hidecursor(NULL);
 		}
 		return;
@@ -7367,8 +7363,8 @@ void touchmotion(struct wl_listener *listener, void *data) {
 		return;
 	}
 
-	sx = t->start_surface_x + (lx - t->start_x);
-	sy = t->start_surface_y + (ly - t->start_y);
+	sx = t->start_surface_x + (logical_cursor_x - t->start_x);
+	sy = t->start_surface_y + (logical_cursor_y - t->start_y);
 
 	surface = p->surface;
 	if (surface && surface->data) {
